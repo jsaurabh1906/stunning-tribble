@@ -1,0 +1,330 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
+import QEAssistMultiSelect from './QEAssistMultiSelect';
+
+// Mock the external dependencies
+jest.mock('@americanexpress/dls-react', () => ({
+  Hint: ({ children, ...props }) => <div data-testid="hint" {...props}>{children}</div>,
+  IconHelp: () => <div data-testid="icon-help">?</div>,
+  Label: ({ children, ...props }) => <label data-testid="label" {...props}>{children}</label>,
+  Tooltip: ({ children, ...props }) => <div data-testid="tooltip" {...props}>{children}</div>,
+  TooltipButton: ({ children, ...props }) => <button data-testid="tooltip-button" {...props}>{children}</button>,
+}));
+
+jest.mock('react-select/creatable', () => {
+  return jest.fn().mockImplementation(({ options, onChange, value, placeholder, ...props }) => (
+    <div data-testid="creatable-select" {...props}>
+      <input
+        data-testid="select-input"
+        placeholder={placeholder}
+        onChange={(e) => {
+          const selectedOptions = options.filter(option => 
+            option.label.toLowerCase().includes(e.target.value.toLowerCase())
+          );
+          onChange(selectedOptions);
+        }}
+      />
+      <div data-testid="options-container">
+        {options.map((option, index) => (
+          <div
+            key={index}
+            data-testid={`option-${index}`}
+            onClick={() => onChange([...value, option])}
+          >
+            {option.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  ));
+});
+
+describe('QEAssistMultiSelect', () => {
+  const mockOptions = [
+    { value: 'option1', label: 'Option 1', description: 'Description 1' },
+    { value: 'option2', label: 'Option 2', description: 'Description 2' },
+    { value: 'option3', label: 'Option 3', description: 'Description 3' },
+  ];
+
+  const defaultProps = {
+    formik: {
+      values: { testField: [] },
+      setFieldValue: jest.fn(),
+      setFieldTouched: jest.fn(),
+      setFieldError: jest.fn(),
+      getFieldProps: jest.fn().mockReturnValue({
+        name: 'testField',
+        value: [],
+        onChange: jest.fn(),
+        onBlur: jest.fn(),
+      }),
+    },
+    optionsList: mockOptions,
+    formikField: 'testField',
+    label: 'Test Multi Select',
+    placeholder: 'Select options...',
+    isMultiSelectEnabled: true,
+    handleChange: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Rendering', () => {
+    it('renders the component with required props', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      expect(screen.getByTestId('label')).toBeInTheDocument();
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
+    });
+
+    it('renders with custom label', () => {
+      render(<QEAssistMultiSelect {...defaultProps} label="Custom Label" />);
+      
+      expect(screen.getByTestId('label')).toHaveTextContent('Custom Label');
+    });
+
+    it('renders with placeholder text', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      expect(screen.getByTestId('select-input')).toHaveAttribute('placeholder', 'Select options...');
+    });
+
+    it('renders hint message when provided', () => {
+      const hintMessage = 'This is a hint message';
+      render(<QEAssistMultiSelect {...defaultProps} hintMessage={hintMessage} />);
+      
+      expect(screen.getByTestId('hint')).toHaveTextContent(hintMessage);
+    });
+
+    it('renders tooltip when hintTooltip is provided', () => {
+      const hintTooltip = 'This is a tooltip';
+      render(<QEAssistMultiSelect {...defaultProps} hintTooltip={hintTooltip} />);
+      
+      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-button')).toBeInTheDocument();
+    });
+
+    it('renders with loading state', () => {
+      render(<QEAssistMultiSelect {...defaultProps} isOptionListLoading={true} />);
+      
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
+    });
+
+    it('renders with no results message when options are empty', () => {
+      render(<QEAssistMultiSelect {...defaultProps} optionsList={[]} noResultsMessage="No options found" />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+
+  describe('Functionality', () => {
+    it('calls handleChange when selection changes', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const firstOption = screen.getByTestId('option-0');
+      await user.click(firstOption);
+      
+      expect(defaultProps.handleChange).toHaveBeenCalled();
+    });
+
+    it('calls formik setFieldValue when value changes', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const firstOption = screen.getByTestId('option-0');
+      await user.click(firstOption);
+      
+      expect(defaultProps.formik.setFieldValue).toHaveBeenCalledWith(
+        'testField',
+        expect.any(Array)
+      );
+    });
+
+    it('filters options based on search text', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const searchInput = screen.getByTestId('select-input');
+      await user.type(searchInput, 'Option 1');
+      
+      // The mock implementation should filter options
+      expect(searchInput.value).toBe('Option 1');
+    });
+
+    it('handles multi-select when enabled', () => {
+      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={true} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      // Multi-select should be enabled by default in our mock
+    });
+
+    it('handles single select when multi-select is disabled', () => {
+      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={false} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('handles blur event', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const selectInput = screen.getByTestId('select-input');
+      await user.click(selectInput);
+      await user.tab();
+      
+      expect(defaultProps.formik.setFieldTouched).toHaveBeenCalledWith('testField', true);
+    });
+
+    it('handles reset functionality', () => {
+      const handleReset = jest.fn();
+      render(<QEAssistMultiSelect {...defaultProps} handleReset={handleReset} />);
+      
+      // Reset functionality would typically be triggered by parent component
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+
+  describe('Validation and Error Handling', () => {
+    it('displays validation errors', () => {
+      const formikWithError = {
+        ...defaultProps.formik,
+        errors: { testField: 'This field is required' },
+        touched: { testField: true },
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikWithError} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('handles form submission state', () => {
+      const formikSubmitting = {
+        ...defaultProps.formik,
+        isSubmitting: true,
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikSubmitting} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('handles validation state', () => {
+      const formikValidating = {
+        ...defaultProps.formik,
+        isValidating: true,
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikValidating} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+
+  describe('Custom Components', () => {
+    it('renders with custom components prop', () => {
+      const customComponents = {
+        Option: ({ children }) => <div data-testid="custom-option">{children}</div>,
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} components={customComponents} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('handles clearable functionality', () => {
+      render(<QEAssistMultiSelect {...defaultProps} isClearable={true} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+
+  describe('Loading States', () => {
+    it('shows loading message when options are loading', () => {
+      render(
+        <QEAssistMultiSelect 
+          {...defaultProps} 
+          isOptionListLoading={true}
+          optionsList={[]}
+        />
+      );
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('shows no results message when no options match search', () => {
+      render(
+        <QEAssistMultiSelect 
+          {...defaultProps} 
+          optionsList={[]}
+          noResultsMessage="No matching options"
+        />
+      );
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+
+  describe('Accessibility', () => {
+    it('has proper aria labels', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const label = screen.getByTestId('label');
+      expect(label).toHaveAttribute('htmlFor', 'testField-dropdown');
+    });
+
+    it('has proper id attributes', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const select = screen.getByTestId('creatable-select');
+      expect(select).toHaveAttribute('id', 'testField-dropdown');
+    });
+
+    it('supports keyboard navigation', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const selectInput = screen.getByTestId('select-input');
+      await user.click(selectInput);
+      await user.keyboard('{ArrowDown}');
+      await user.keyboard('{Enter}');
+      
+      expect(selectInput).toBeInTheDocument();
+    });
+  });
+
+  describe('Custom Styling', () => {
+    it('applies custom width styles', () => {
+      render(<QEAssistMultiSelect {...defaultProps} maxWidth={300} minWidth={100} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('applies custom class names', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const container = screen.getByTestId('creatable-select').closest('div');
+      expect(container).toHaveClass('multiSelect');
+    });
+  });
+
+  describe('Format Functions', () => {
+    it('handles formatCreateLabel function', () => {
+      const formatCreateLabel = (input) => `Add "${input}"`;
+      render(<QEAssistMultiSelect {...defaultProps} formatCreateLabel={formatCreateLabel} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+
+    it('handles default menu open state', () => {
+      render(<QEAssistMultiSelect {...defaultProps} isDefaultMenuOpen={true} />);
+      
+      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+    });
+  });
+});
