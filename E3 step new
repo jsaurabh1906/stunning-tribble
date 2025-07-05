@@ -1,0 +1,108 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import EnhanceStep3 from '../../../src/components/eqassist/enhance/EnhanceStep3';
+import { EnhancedFeatureContext } from '../../../src/components/eqassist/context/EnhancedFeatureContext';
+import * as useTempEnhanceModule from '../../../src/hooks/eqassist/useTempGenerateApis';
+
+jest.mock('../../../src/hooks/eqassist/useTempGenerateApis');
+
+describe('EnhanceStep3 additional tests', () => {
+  const mockSetFeatureDetails = jest.fn();
+  const mockSetCurrentStep = jest.fn();
+
+  const contextValues = {
+    featureDetails: {
+      featureType: 'Existing Feature',
+      featureId: '12345',
+      featureName: 'Test Feature',
+      organization: 'Test Org',
+      product: 'Test Product',
+      featureDescription: 'Test Description',
+      featureAcceptanceCriteria: 'Criteria',
+      featureAcceptanceCriteriaDescription: 'Detailed Criteria',
+      score: '2.00',
+      scoreCriteria: 'Some breakdown',
+      docIds: ['doc1', 'doc2'],
+      botQA: [],
+      questionSet: [{ questionNumber: 0, question: 'Why important?', answer: '' }],
+    },
+    setFeatureDetails: mockSetFeatureDetails,
+    setCurrentStep: mockSetCurrentStep,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should display actual numeric score correctly', () => {
+    render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep3 />
+      </EnhancedFeatureContext.Provider>
+    );
+    expect(screen.getByText('Current Score: 2.00/10')).toBeInTheDocument();
+  });
+
+  it('should disable Next button while isEnhancingFeature is true', () => {
+    useTempEnhanceModule.useTempEnhance.mockReturnValue({
+      isEnhancingFeature: true,
+      enhanceFeature: jest.fn(),
+    });
+
+    render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep3 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    const nextButton = screen.getByText('Next');
+    expect(nextButton).toBeDisabled();
+  });
+
+  it('should call enhanceFeature and advance step on success', async () => {
+    const mockEnhance = jest.fn().mockResolvedValue('ok');
+
+    useTempEnhanceModule.useTempEnhance.mockReturnValue({
+      isEnhancingFeature: false,
+      enhanceFeature: mockEnhance,
+    });
+
+    render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep3 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Enter your response'), {
+      target: { value: 'My answer' },
+    });
+
+    fireEvent.click(screen.getByText('Next'));
+
+    await waitFor(() => {
+      expect(mockEnhance).toHaveBeenCalled();
+      expect(mockSetCurrentStep).toHaveBeenCalled();
+    });
+  });
+
+  it('should show alert when enhanceFeature returns error', async () => {
+    const mockEnhance = jest.fn().mockResolvedValue('error');
+
+    useTempEnhanceModule.useTempEnhance.mockReturnValue({
+      isEnhancingFeature: false,
+      enhanceFeature: mockEnhance,
+    });
+
+    render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep3 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    fireEvent.click(screen.getByText('Next'));
+
+    await waitFor(() => {
+      expect(screen.getByText('An error occurred, please try again.')).toBeInTheDocument();
+    });
+  });
+});
