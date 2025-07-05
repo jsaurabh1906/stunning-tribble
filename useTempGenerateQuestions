@@ -1,0 +1,836 @@
+// useTempGenerateQuestions.test.js
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import { useTempGenerateQuestions } from '../../../hooks/qeassist/useTempGenerateQuestions';
+
+// Mock the dependencies
+jest.mock('../../../constants', () => ({
+  FETCHYE_OPTIONS: {
+    headers: { 'Content-Type': 'application/json' }
+  }
+}));
+
+// Mock fetchye
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn()
+}));
+
+// Mock react-redux
+const mockUseSelector = jest.fn();
+jest.mock('react-redux', () => ({
+  useSelector: () => mockUseSelector()
+}));
+
+// Create a mock store
+const createMockStore = (initialState = {}) => {
+  return configureStore({
+    reducer: {
+      config: (state = { qeAssistUrl: 'http://test-api.com' }) => state,
+      ...initialState
+    }
+  });
+};
+
+// Test wrapper component
+const createWrapper = (store) => {
+  return ({ children }) => (
+    <Provider store={store}>
+      {children}
+    </Provider>
+  );
+};
+
+describe('useTempGenerateQuestions', () => {
+  let mockUseFetchye;
+  let mockStore;
+
+  beforeEach(() => {
+    mockUseFetchye = require('fetchye').useFetchye;
+    mockStore = createMockStore();
+    mockUseSelector.mockReturnValue('http://test-api.com');
+    
+    // Clear all mocks
+    jest.clearAllMocks();
+  });
+
+  describe('useTempGenerateQuestions hook', () => {
+    it('should initialize with correct default values', () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      mockUseFetchye.mockReturnValue([false, jest.fn()]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      expect(result.current.isGeneratingQuestions).toBe(false);
+      expect(result.current.generateQuestions).toBeInstanceOf(Function);
+      expect(result.current.generateQuestionsData).toBeNull();
+    });
+
+    it('should handle successful question generation', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          questions: [
+            { question: 'Test question 1', answer: 'Test answer 1' },
+            { question: 'Test question 2', answer: 'Test answer 2' }
+          ]
+        }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(mockRunFunction).toHaveBeenCalledWith({
+        method: 'POST',
+        body: 'test data'
+      });
+      expect(mockPayload.setEnhancedFeatureDetails).toHaveBeenCalledWith({
+        score: undefined,
+        scoreCriteria: undefined,
+        docIds: undefined,
+        botQA: [
+          { question: 'Test question 1', answer: 'Test answer 1' },
+          { question: 'Test question 2', answer: 'Test answer 2' }
+        ],
+        questionSet: [
+          { question: 'Test question 1', answer: '', questionNumber: 1 },
+          { question: 'Test question 2', answer: '', questionNumber: 2 }
+        ]
+      });
+    });
+
+    it('should handle API error responses', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        status: 500,
+        body: { error: 'Internal server error' }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+        expect(response).toBe('error');
+      });
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle network errors', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+        expect(response).toBe('error');
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Error inside generate Question', expect.any(Error));
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should handle invalid questions format', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          questions: 'invalid format'
+        }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      const consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+        expect(response).toBe('error');
+      });
+
+      expect(consoleInfoSpy).toHaveBeenCalledWith('warn invalid questions format. Raw:', 'invalid format');
+      consoleInfoSpy.mockRestore();
+    });
+
+    it('should handle questions with special characters', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          questions: '[{"question":"Test [question] 1","answer":"Test answer 1"}]'
+        }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      const consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+        expect(response).toBe('error');
+      });
+
+      expect(consoleInfoSpy).toHaveBeenCalledWith('warn invalid questions format. Raw:', '[{"question":"Test [question] 1","answer":"Test answer 1"}]');
+      consoleInfoSpy.mockRestore();
+    });
+
+    it('should return loading state correctly', () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      mockUseFetchye.mockReturnValue([true, jest.fn()]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      expect(result.current.isGeneratingQuestions).toBe(true);
+    });
+  });
+
+  describe('useTempEnhance hook', () => {
+    it('should initialize with correct default values', () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      mockUseFetchye.mockReturnValue([false, jest.fn()]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      expect(result.current.isEnhancingFeature).toBe(false);
+      expect(result.current.enhanceFeature).toBeInstanceOf(Function);
+      expect(result.current.enhanceFeatureResponse).toBeNull();
+    });
+
+    it('should handle successful feature enhancement', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        data: {
+          status: 200,
+          body: {
+            enhanced_feature: {
+              description: 'Enhanced description',
+              acceptance_criteria: 'Enhanced criteria'
+            }
+          }
+        }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature();
+        expect(response).toBe('success');
+      });
+
+      expect(mockPayload.setEnhancedFeatureDetails).toHaveBeenCalledWith({
+        enhancedDescription: 'Enhanced description',
+        enhancedAcceptanceCriteria: 'Enhanced criteria'
+      });
+    });
+
+    it('should handle enhancement API errors', async () => {
+      const mockPayload = {
+        featureDetails: { tempPayload: { questions_and_answers: 'test data' } },
+        setEnhancedFeatureDetails: jest.fn()
+      };
+
+      const mockRunFunction = jest.fn().mockResolvedValue({
+        data: {
+          status: 500
+        }
+      });
+
+      mockUseFetchye.mockReturnValue([false, mockRunFunction]);
+
+      const { result } = renderHook(
+        () => useTempGenerateQuestions(mockPayload),
+        { wrapper: createWrapper(mockStore) }
+      );
+
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature();
+        expect(response).toBe('error');
+      });
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+});
+___________________//////_////_=====____________________________________
+// EnhanceStep2.test.js
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import EnhanceStep2 from '../EnhanceStep2';
+import { EnhancedFeatureContext } from '../../context/EnhancedFeatureContext';
+
+// Mock the custom hook
+jest.mock('../../../hooks/qeassist/useTempGenerateQuestions', () => ({
+  useTempGenerateQuestions: jest.fn()
+}));
+
+// Mock the UI components
+jest.mock('@gamericanexpress/dls-react', () => ({
+  Alert: ({ children }) => <div data-testid="alert">{children}</div>,
+  ButtonPrimary: ({ children, onClick, loading, className }) => (
+    <button 
+      onClick={onClick} 
+      disabled={loading}
+      className={className}
+      data-testid="button-primary"
+    >
+      {loading ? 'Loading...' : children}
+    </button>
+  ),
+  ButtonSecondary: ({ children, onClick }) => (
+    <button onClick={onClick} data-testid="button-secondary">
+      {children}
+    </button>
+  ),
+  Heading: ({ children, headingStyle, level }) => (
+    <h1 data-testid="heading" data-level={level} data-style={headingStyle}>
+      {children}
+    </h1>
+  )
+}));
+
+// Mock the sidebar and content components
+jest.mock('../../chatbot/SidebarNav', () => {
+  return function MockSidebarNav({ onChange, counter }) {
+    return (
+      <div data-testid="sidebar-nav">
+        <button onClick={() => onChange(1)}>Category 1</button>
+        <span data-testid="counter">{counter}</span>
+      </div>
+    );
+  };
+});
+
+jest.mock('../../chatbot/ContentBox', () => {
+  return function MockContentBox({ active, setCounter, onQAUpdate, setQaData }) {
+    return (
+      <div data-testid="content-box">
+        <button 
+          onClick={() => {
+            setCounter(5);
+            onQAUpdate([{ question: 'Test Q', answer: 'Test A' }]);
+            setQaData([{ question: 'Test Q', answer: 'Test A' }]);
+          }}
+        >
+          Update QA
+        </button>
+      </div>
+    );
+  };
+});
+
+// Create mock store
+const createMockStore = () => {
+  return configureStore({
+    reducer: {
+      test: (state = {}) => state
+    }
+  });
+};
+
+// Create mock context
+const createMockContext = (overrides = {}) => {
+  return {
+    featureDetails: {
+      tempPayload: {
+        questions_and_answers: JSON.stringify([
+          { question: 'Q1', answer: 'A1' },
+          { question: 'Q2', answer: 'A2' }
+        ])
+      }
+    },
+    setFeatureDetails: jest.fn(),
+    setCurrentStep: jest.fn(),
+    ...overrides
+  };
+};
+
+// Test wrapper
+const TestWrapper = ({ children, contextValue, store }) => (
+  <Provider store={store}>
+    <EnhancedFeatureContext.Provider value={contextValue}>
+      {children}
+    </EnhancedFeatureContext.Provider>
+  </Provider>
+);
+
+describe('EnhanceStep2 Component', () => {
+  let mockUseTempGenerateQuestions;
+  let mockStore;
+  let mockContext;
+
+  beforeEach(() => {
+    mockUseTempGenerateQuestions = require('../../../hooks/qeassist/useTempGenerateQuestions').useTempGenerateQuestions;
+    mockStore = createMockStore();
+    mockContext = createMockContext();
+    
+    // Default mock implementation
+    mockUseTempGenerateQuestions.mockReturnValue({
+      isGeneratingQuestions: false,
+      generateQuestions: jest.fn(),
+      generateQuestionsData: null
+    });
+
+    jest.clearAllMocks();
+  });
+
+  describe('Component Rendering', () => {
+    it('should render all main components', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      expect(screen.getByTestId('heading')).toBeInTheDocument();
+      expect(screen.getByTestId('sidebar-nav')).toBeInTheDocument();
+      expect(screen.getByTestId('content-box')).toBeInTheDocument();
+      expect(screen.getByTestId('button-secondary')).toBeInTheDocument();
+      expect(screen.getByTestId('button-primary')).toBeInTheDocument();
+    });
+
+    it('should display the correct heading', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const heading = screen.getByTestId('heading');
+      expect(heading).toHaveTextContent('Let&apos;s Discuss');
+      expect(heading).toHaveAttribute('data-level', '2');
+      expect(heading).toHaveAttribute('data-style', 'heading4');
+    });
+
+    it('should display the correct descriptive text', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      expect(screen.getByText('gather additional details to increase the quality of the feature')).toBeInTheDocument();
+    });
+  });
+
+  describe('State Management', () => {
+    it('should initialize with default state values', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      expect(screen.getByTestId('counter')).toHaveTextContent('1');
+      expect(screen.getByTestId('button-primary')).toHaveTextContent('Next');
+    });
+
+    it('should update counter when sidebar navigation changes', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const categoryButton = screen.getByText('Category 1');
+      fireEvent.click(categoryButton);
+
+      // The counter should reflect the active category
+      expect(screen.getByTestId('counter')).toHaveTextContent('1');
+    });
+
+    it('should update QA data when ContentBox triggers updates', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const updateButton = screen.getByText('Update QA');
+      fireEvent.click(updateButton);
+
+      expect(screen.getByTestId('counter')).toHaveTextContent('5');
+    });
+  });
+
+  describe('Navigation', () => {
+    it('should handle previous step navigation', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const backButton = screen.getByTestId('button-secondary');
+      fireEvent.click(backButton);
+
+      expect(mockContext.setCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    it('should handle next step navigation when not generating questions', async () => {
+      const mockGenerateQuestions = jest.fn().mockResolvedValue('success');
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(mockGenerateQuestions).toHaveBeenCalled();
+      });
+    });
+
+    it('should show loading state when generating questions', () => {
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: true,
+        generateQuestions: jest.fn(),
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      expect(nextButton).toHaveTextContent('Loading...');
+      expect(nextButton).toBeDisabled();
+    });
+  });
+
+  describe('Question Generation', () => {
+    it('should handle successful question generation', async () => {
+      const mockGenerateQuestions = jest.fn().mockResolvedValue('success');
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(mockGenerateQuestions).toHaveBeenCalled();
+        expect(mockContext.setCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+      });
+    });
+
+    it('should handle question generation errors', async () => {
+      const mockGenerateQuestions = jest.fn().mockResolvedValue('error');
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(mockGenerateQuestions).toHaveBeenCalled();
+        // Should not proceed to next step on error
+        expect(mockContext.setCurrentStep).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should show error message when question generation fails', async () => {
+      const mockGenerateQuestions = jest.fn().mockResolvedValue('error');
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('alert')).toHaveTextContent('An error occurred, please try again.');
+      });
+    });
+
+    it('should update payload with QA data before generation', async () => {
+      const mockGenerateQuestions = jest.fn().mockResolvedValue('success');
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      // First update QA data
+      const updateButton = screen.getByText('Update QA');
+      fireEvent.click(updateButton);
+
+      // Then trigger generation
+      const nextButton = screen.getByTestId('button-primary');
+      fireEvent.click(nextButton);
+
+      await waitFor(() => {
+        expect(mockGenerateQuestions).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle missing feature details gracefully', () => {
+      const contextWithoutFeatureDetails = {
+        ...mockContext,
+        featureDetails: null
+      };
+
+      expect(() => {
+        render(
+          <TestWrapper contextValue={contextWithoutFeatureDetails} store={mockStore}>
+            <EnhanceStep2 />
+          </TestWrapper>
+        );
+      }).not.toThrow();
+    });
+
+    it('should handle malformed tempPayload gracefully', () => {
+      const contextWithMalformedPayload = {
+        ...mockContext,
+        featureDetails: {
+          tempPayload: {
+            questions_and_answers: 'invalid json'
+          }
+        }
+      };
+
+      expect(() => {
+        render(
+          <TestWrapper contextValue={contextWithMalformedPayload} store={mockStore}>
+            <EnhanceStep2 />
+          </TestWrapper>
+        );
+      }).not.toThrow();
+    });
+
+    it('should clear error state after successful generation', async () => {
+      const mockGenerateQuestions = jest.fn()
+        .mockResolvedValueOnce('error')
+        .mockResolvedValueOnce('success');
+      
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: false,
+        generateQuestions: mockGenerateQuestions,
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      
+      // First attempt - should show error
+      fireEvent.click(nextButton);
+      await waitFor(() => {
+        expect(screen.getByTestId('alert')).toBeInTheDocument();
+      });
+
+      // Second attempt - should clear error
+      fireEvent.click(nextButton);
+      await waitFor(() => {
+        expect(mockContext.setCurrentStep).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Accessibility', () => {
+    it('should have proper ARIA attributes', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      expect(nextButton).toHaveAttribute('type', 'button');
+      
+      const backButton = screen.getByTestId('button-secondary');
+      expect(backButton).toHaveAttribute('type', 'button');
+    });
+
+    it('should disable next button when loading', () => {
+      mockUseTempGenerateQuestions.mockReturnValue({
+        isGeneratingQuestions: true,
+        generateQuestions: jest.fn(),
+        generateQuestionsData: null
+      });
+
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const nextButton = screen.getByTestId('button-primary');
+      expect(nextButton).toBeDisabled();
+    });
+  });
+
+  describe('Component Integration', () => {
+    it('should pass correct props to child components', () => {
+      render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      expect(screen.getByTestId('sidebar-nav')).toBeInTheDocument();
+      expect(screen.getByTestId('content-box')).toBeInTheDocument();
+    });
+
+    it('should handle context updates correctly', () => {
+      const { rerender } = render(
+        <TestWrapper contextValue={mockContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      const updatedContext = {
+        ...mockContext,
+        featureDetails: {
+          tempPayload: {
+            questions_and_answers: JSON.stringify([
+              { question: 'Updated Q', answer: 'Updated A' }
+            ])
+          }
+        }
+      };
+
+      rerender(
+        <TestWrapper contextValue={updatedContext} store={mockStore}>
+          <EnhanceStep2 />
+        </TestWrapper>
+      );
+
+      expect(screen.getByTestId('content-box')).toBeInTheDocument();
+    });
+  });
+});
