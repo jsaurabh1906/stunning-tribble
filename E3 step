@@ -1,0 +1,476 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import EnhanceStep3 from './EnhanceStep3';
+import { EnhancedFeatureContext } from '../context/EnhancedFeatureContext';
+import { useTempEnhance } from '../hooks/qeassist/useTempGenerateApis';
+
+// Mock the custom hook
+jest.mock('../hooks/qeassist/useTempGenerateApis', () => ({
+  useTempEnhance: jest.fn()
+}));
+
+// Mock console.log to avoid noise in tests
+const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+describe('EnhanceStep3', () => {
+  const mockSetFeatureDetails = jest.fn();
+  const mockSetResponses = jest.fn();
+  const mockSetCurrentStep = jest.fn();
+  const mockSetErrorOnNext = jest.fn();
+  const mockEnhanceFeature = jest.fn();
+
+  const defaultContextValue = {
+    featureDetails: {
+      featureId: 'test-feature',
+      docIds: ['doc1', 'doc2'],
+      score: 75,
+      questionSet: [
+        {
+          questionNumber: 1,
+          question: 'What is the main purpose of this feature?',
+          answer: 'Initial answer 1'
+        },
+        {
+          questionNumber: 2,
+          question: 'How does this feature benefit users?',
+          answer: 'Initial answer 2'
+        }
+      ],
+      botQA: [
+        { questionNumber: 1, question: 'Bot question 1', answer: '' },
+        { questionNumber: 2, question: 'Bot question 2', answer: '' }
+      ]
+    },
+    responses: {},
+    setFeatureDetails: mockSetFeatureDetails,
+    setResponses: mockSetResponses,
+    setCurrentStep: mockSetCurrentStep
+  };
+
+  const mockUseTempEnhance = {
+    isEnhancingFeature: false,
+    enhanceFeature: mockEnhanceFeature
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useTempEnhance.mockReturnValue(mockUseTempEnhance);
+  });
+
+  afterAll(() => {
+    consoleSpy.mockRestore();
+  });
+
+  const renderComponent = (contextValue = defaultContextValue) => {
+    return render(
+      <EnhancedFeatureContext.Provider value={contextValue}>
+        <EnhanceStep3 setErrorOnNext={mockSetErrorOnNext} />
+      </EnhancedFeatureContext.Provider>
+    );
+  };
+
+  describe('Component Rendering', () => {
+    test('renders the component with correct heading', () => {
+      renderComponent();
+      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Additional Details');
+    });
+
+    test('displays current score correctly', () => {
+      renderComponent();
+      expect(screen.getByRole('heading', { level: 4 })).toHaveTextContent('Current Score: 75/10');
+    });
+
+    test('displays current score as N/A when score is empty string', () => {
+      const contextWithEmptyScore = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          score: ''
+        }
+      };
+      renderComponent(contextWithEmptyScore);
+      expect(screen.getByRole('heading', { level: 4 })).toHaveTextContent('Current Score: N/A');
+    });
+
+    test('displays current score as N/A when score is null', () => {
+      const contextWithNullScore = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          score: null
+        }
+      };
+      renderComponent(contextWithNullScore);
+      expect(screen.getByRole('heading', { level: 4 })).toHaveTextContent('Current Score: N/A');
+    });
+
+    test('displays instruction text', () => {
+      renderComponent();
+      expect(screen.getByText('Provide additional details to increase the quality of the feature(optional).')).toBeInTheDocument();
+    });
+
+    test('renders all question-answer pairs', () => {
+      renderComponent();
+      expect(screen.getByText('What is the main purpose of this feature?')).toBeInTheDocument();
+      expect(screen.getByText('How does this feature benefit users?')).toBeInTheDocument();
+    });
+
+    test('renders textarea for each question', () => {
+      renderComponent();
+      const textareas = screen.getAllByRole('textbox');
+      expect(textareas).toHaveLength(2);
+    });
+
+    test('renders Back and Next buttons', () => {
+      renderComponent();
+      expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
+    });
+  });
+
+  describe('Form Interactions', () => {
+    test('updates response when textarea value changes', () => {
+      renderComponent();
+      const firstTextarea = screen.getByDisplayValue('');
+      
+      fireEvent.change(firstTextarea, { target: { value: 'Updated response' } });
+      
+      expect(mockSetResponses).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    test('handles input change correctly', () => {
+      renderComponent();
+      const firstTextarea = screen.getByDisplayValue('');
+      
+      fireEvent.change(firstTextarea, { target: { value: 'Test response' } });
+      
+      // Verify the function passed to setResponses works correctly
+      const setResponsesCall = mockSetResponses.mock.calls[0][0];
+      const newResponses = setResponsesCall({});
+      expect(newResponses).toEqual({ 1: 'Test response' });
+    });
+
+    test('handles multiple textarea changes', () => {
+      renderComponent();
+      const textareas = screen.getAllByRole('textbox');
+      
+      fireEvent.change(textareas[0], { target: { value: 'Response 1' } });
+      fireEvent.change(textareas[1], { target: { value: 'Response 2' } });
+      
+      expect(mockSetResponses).toHaveBeenCalledTimes(2);
+    });
+
+    test('preserves existing responses when updating', () => {
+      const contextWithResponses = {
+        ...defaultContextValue,
+        responses: { 1: 'Existing response' }
+      };
+      renderComponent(contextWithResponses);
+      
+      const secondTextarea = screen.getAllByRole('textbox')[1];
+      fireEvent.change(secondTextarea, { target: { value: 'New response' } });
+      
+      const setResponsesCall = mockSetResponses.mock.calls[0][0];
+      const newResponses = setResponsesCall({ 1: 'Existing response' });
+      expect(newResponses).toEqual({ 1: 'Existing response', 2: 'New response' });
+    });
+  });
+
+  describe('Navigation', () => {
+    test('calls setCurrentStep with correct value when Back button is clicked', () => {
+      renderComponent();
+      const backButton = screen.getByRole('button', { name: /back/i });
+      
+      fireEvent.click(backButton);
+      
+      expect(mockSetCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+      
+      // Test the function passed to setCurrentStep
+      const setCurrentStepCall = mockSetCurrentStep.mock.calls[0][0];
+      const newStep = setCurrentStepCall(3);
+      expect(newStep).toBe(2);
+    });
+
+    test('handles save operation when Next button is clicked', async () => {
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetFeatureDetails).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Save Functionality', () => {
+    test('updates feature details with responses on save', async () => {
+      const contextWithResponses = {
+        ...defaultContextValue,
+        responses: { 1: 'Response 1', 2: 'Response 2' }
+      };
+      renderComponent(contextWithResponses);
+      
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetFeatureDetails).toHaveBeenCalledWith(expect.any(Function));
+      });
+      
+      // Test the function passed to setFeatureDetails
+      const setFeatureDetailsCall = mockSetFeatureDetails.mock.calls[0][0];
+      const updatedFeatureDetails = setFeatureDetailsCall(defaultContextValue.featureDetails);
+      
+      expect(updatedFeatureDetails.questionSet[0].answer).toBe('Response 1');
+      expect(updatedFeatureDetails.questionSet[1].answer).toBe('Response 2');
+    });
+
+    test('preserves existing answers when no response provided', async () => {
+      const contextWithPartialResponses = {
+        ...defaultContextValue,
+        responses: { 1: 'New response 1' }
+      };
+      renderComponent(contextWithPartialResponses);
+      
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetFeatureDetails).toHaveBeenCalled();
+      });
+      
+      const setFeatureDetailsCall = mockSetFeatureDetails.mock.calls[0][0];
+      const updatedFeatureDetails = setFeatureDetailsCall(defaultContextValue.featureDetails);
+      
+      expect(updatedFeatureDetails.questionSet[0].answer).toBe('New response 1');
+      expect(updatedFeatureDetails.questionSet[1].answer).toBe('Initial answer 2');
+    });
+
+    test('logs responses to console', async () => {
+      const contextWithResponses = {
+        ...defaultContextValue,
+        responses: { 1: 'Test response' }
+      };
+      renderComponent(contextWithResponses);
+      
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Responses saved to context:', { 1: 'Test response' });
+      });
+    });
+  });
+
+  describe('Feature Enhancement', () => {
+    test('calls enhanceFeature with correct parameters on successful save', async () => {
+      mockEnhanceFeature.mockResolvedValue({ success: true });
+      
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockEnhanceFeature).toHaveBeenCalledWith({
+          feature_id: 'test-feature',
+          doc_id: 'doc1,doc2',
+          question_and_answers: expect.any(Array)
+        });
+      });
+    });
+
+    test('handles enhancement error', async () => {
+      mockEnhanceFeature.mockResolvedValue({ error: 'Enhancement failed' });
+      
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+        expect(mockSetErrorOnNext).toHaveBeenCalledWith(true);
+      });
+    });
+
+    test('handles enhancement API exception', async () => {
+      mockEnhanceFeature.mockRejectedValue(new Error('API Error'));
+      
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetErrorOnNext).toHaveBeenCalledWith(true);
+      });
+    });
+
+    test('advances to next step on successful enhancement', async () => {
+      mockEnhanceFeature.mockResolvedValue({ success: true });
+      
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockSetCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+      });
+      
+      const setCurrentStepCall = mockSetCurrentStep.mock.calls[1][0];
+      const newStep = setCurrentStepCall(3);
+      expect(newStep).toBe(4);
+    });
+
+    test('shows loading state during enhancement', () => {
+      const mockUseTempEnhanceLoading = {
+        isEnhancingFeature: true,
+        enhanceFeature: mockEnhanceFeature
+      };
+      useTempEnhance.mockReturnValue(mockUseTempEnhanceLoading);
+      
+      renderComponent();
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      
+      expect(nextButton).toHaveTextContent('Next');
+      expect(nextButton.disabled).toBe(true);
+    });
+  });
+
+  describe('Error Handling', () => {
+    test('displays error message when errorOnNext is true', () => {
+      renderComponent();
+      
+      // Simulate error state
+      const errorAlert = screen.queryByText('An error occurred, please try again.');
+      
+      // Initially no error should be shown
+      expect(errorAlert).not.toBeInTheDocument();
+    });
+
+    test('handles missing feature details gracefully', () => {
+      const contextWithMissingDetails = {
+        ...defaultContextValue,
+        featureDetails: null
+      };
+      
+      expect(() => renderComponent(contextWithMissingDetails)).not.toThrow();
+    });
+
+    test('handles empty questionSet gracefully', () => {
+      const contextWithEmptyQuestions = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          questionSet: []
+        }
+      };
+      
+      renderComponent(contextWithEmptyQuestions);
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
+
+    test('handles missing botQA gracefully', () => {
+      const contextWithMissingBotQA = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          botQA: null
+        }
+      };
+      
+      expect(() => renderComponent(contextWithMissingBotQA)).not.toThrow();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    test('handles docIds as array with single element', async () => {
+      const contextWithSingleDoc = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          docIds: ['single-doc']
+        }
+      };
+      
+      mockEnhanceFeature.mockResolvedValue({ success: true });
+      renderComponent(contextWithSingleDoc);
+      
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockEnhanceFeature).toHaveBeenCalledWith({
+          feature_id: 'test-feature',
+          doc_id: 'single-doc',
+          question_and_answers: expect.any(Array)
+        });
+      });
+    });
+
+    test('handles empty docIds array', async () => {
+      const contextWithEmptyDocs = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          docIds: []
+        }
+      };
+      
+      mockEnhanceFeature.mockResolvedValue({ success: true });
+      renderComponent(contextWithEmptyDocs);
+      
+      const nextButton = screen.getByRole('button', { name: /next/i });
+      fireEvent.click(nextButton);
+      
+      await waitFor(() => {
+        expect(mockEnhanceFeature).toHaveBeenCalledWith({
+          feature_id: 'test-feature',
+          doc_id: '',
+          question_and_answers: expect.any(Array)
+        });
+      });
+    });
+
+    test('handles questionSet with missing questionNumber', () => {
+      const contextWithMissingQuestionNumber = {
+        ...defaultContextValue,
+        featureDetails: {
+          ...defaultContextValue.featureDetails,
+          questionSet: [
+            { question: 'Question without number', answer: 'Answer' }
+          ]
+        }
+      };
+      
+      expect(() => renderComponent(contextWithMissingQuestionNumber)).not.toThrow();
+    });
+  });
+
+  describe('Accessibility', () => {
+    test('textareas have proper labels', () => {
+      renderComponent();
+      const textareas = screen.getAllByRole('textbox');
+      
+      textareas.forEach(textarea => {
+        expect(textarea).toHaveAttribute('placeholder', 'Enter your response');
+      });
+    });
+
+    test('buttons have proper labels', () => {
+      renderComponent();
+      expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
+    });
+
+    test('headings have proper hierarchy', () => {
+      renderComponent();
+      expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 4 })).toBeInTheDocument();
+    });
+  });
+});
