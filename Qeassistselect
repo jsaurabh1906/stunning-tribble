@@ -1,0 +1,125 @@
+// QEAssistSelect.test.jsx
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import QEAssistSelect from './QEAssistSelect';
+
+const formikMock = {
+  dirty: false,
+  errors: {},
+  handleBlur: jest.fn(),
+  handleChange: jest.fn(),
+  handleSubmit: jest.fn(),
+  isSubmitting: false,
+  isValid: true,
+  isValidating: false,
+  setErrors: jest.fn(),
+  setFieldTouched: jest.fn(),
+  setFieldValue: jest.fn(),
+  setStatus: jest.fn(),
+  setSubmitting: jest.fn(),
+  setTouched: jest.fn(),
+  setValues: jest.fn(),
+  touched: {},
+  values: {},
+  validateField: jest.fn(),
+  validateForm: jest.fn(),
+};
+
+const defaultProps = {
+  formik: formikMock,
+  formikFieldName: 'testField',
+  label: 'Test Label',
+  handleChange: jest.fn(),
+  optionList: [
+    { id: 1, label: 'Option 1' },
+    { id: 2, label: 'Option 2' },
+  ],
+  getOptionValue: x => x.id,
+  getOptionLabel: x => x.label,
+  isOptionsLoading: false,
+  isDisabled: false,
+  placeholder: 'Select an option',
+  style: {},
+};
+
+describe('QEAssistSelect', () => {
+  it('renders with required props', () => {
+    render(<QEAssistSelect {...defaultProps} />);
+    expect(screen.getByLabelText(/Test Label/)).toBeInTheDocument();
+    expect(screen.getByText('Option 1')).toBeInTheDocument();
+    expect(screen.getByText('Option 2')).toBeInTheDocument();
+  });
+
+  it('calls handleChange on selection', () => {
+    render(<QEAssistSelect {...defaultProps} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 1 } });
+    expect(defaultProps.handleChange).toHaveBeenCalled();
+  });
+
+  it('shows placeholder when provided', () => {
+    render(<QEAssistSelect {...defaultProps} />);
+    expect(screen.getByText('Select an option')).toBeInTheDocument();
+  });
+
+  it('disables select when isDisabled is true', () => {
+    render(<QEAssistSelect {...defaultProps} isDisabled={true} />);
+    expect(screen.getByRole('combobox')).toBeDisabled();
+  });
+
+  it('shows loading state', () => {
+    render(<QEAssistSelect {...defaultProps} isOptionsLoading={true} />);
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+  });
+
+  it('shows error alert when options fail to load', () => {
+    render(<QEAssistSelect {...defaultProps} isOptionsLoading={false} optionList={[]} />);
+    expect(screen.getByText(/Unable to load options/)).toBeInTheDocument();
+  });
+
+  it('calls getOptionLabel and getOptionValue for each option', () => {
+    const getOptionLabel = jest.fn(x => x.label);
+    const getOptionValue = jest.fn(x => x.id);
+    render(
+      <QEAssistSelect
+        {...defaultProps}
+        getOptionLabel={getOptionLabel}
+        getOptionValue={getOptionValue}
+      />
+    );
+    expect(getOptionLabel).toHaveBeenCalled();
+    expect(getOptionValue).toHaveBeenCalled();
+  });
+
+  it('applies custom styles', () => {
+    render(<QEAssistSelect {...defaultProps} style={{ background: 'red' }} />);
+    expect(screen.getByRole('combobox')).toHaveStyle('background: red');
+  });
+
+  it('renders with minimal required props', () => {
+    // Remove optional props
+    const { container } = render(
+      <QEAssistSelect
+        {...defaultProps}
+        placeholder={undefined}
+        style={undefined}
+      />
+    );
+    expect(container).toBeInTheDocument();
+  });
+
+  it('handles empty optionList gracefully', () => {
+    render(<QEAssistSelect {...defaultProps} optionList={[]} />);
+    expect(screen.getByText(/Unable to load options/)).toBeInTheDocument();
+  });
+
+  it('sorts options by getOptionLabel', () => {
+    const optionList = [
+      { id: 2, label: 'B' },
+      { id: 1, label: 'A' },
+    ];
+    render(<QEAssistSelect {...defaultProps} optionList={optionList} />);
+    const options = screen.getAllByRole('option');
+    expect(options[1].textContent).toBe('A');
+    expect(options[2].textContent).toBe('B');
+  });
+});
