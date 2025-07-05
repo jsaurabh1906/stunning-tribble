@@ -1,0 +1,365 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
+import QEAssistMultiSelectOptionTooltip from './QEAssistMultiSelectOptionTooltip';
+
+// Mock the external dependencies
+jest.mock('@americanexpress/dls-react', () => ({
+  Tooltip: ({ children, triggerElement, id, placement }) => (
+    <div data-testid="tooltip" id={id} data-placement={placement}>
+      <div data-testid="tooltip-trigger">{triggerElement}</div>
+      <div data-testid="tooltip-content">{children}</div>
+    </div>
+  ),
+}));
+
+jest.mock('react-select', () => ({
+  components: {
+    MultiValueLabel: ({ children, ...props }) => (
+      <div data-testid="multi-value-label" {...props}>
+        {children}
+      </div>
+    ),
+  },
+}));
+
+describe('QEAssistMultiSelectOptionTooltip', () => {
+  const mockProps = {
+    children: 'Option Label',
+    data: {
+      value: 'test-option',
+      label: 'Test Option',
+      description: 'This is a test option description',
+      tooltip: 'This is a tooltip text',
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Rendering', () => {
+    it('renders the component with basic props', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-trigger')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-content')).toBeInTheDocument();
+    });
+
+    it('renders children content', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      expect(screen.getByTestId('multi-value-label')).toHaveTextContent('Option Label');
+    });
+
+    it('renders tooltip content with description', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('This is a test option description');
+    });
+
+    it('renders tooltip content with tooltip text when no description', () => {
+      const propsWithoutDescription = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: undefined,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithoutDescription} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('This is a tooltip text');
+    });
+
+    it('renders tooltip content with children when no description or tooltip', () => {
+      const propsWithoutDescriptionOrTooltip = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: undefined,
+          tooltip: undefined,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithoutDescriptionOrTooltip} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('Option Label');
+    });
+
+    it('renders with correct tooltip id', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const tooltip = screen.getByTestId('tooltip');
+      expect(tooltip).toHaveAttribute('id', 'MultiValueLabel');
+    });
+
+    it('renders with correct placement', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const tooltip = screen.getByTestId('tooltip');
+      expect(tooltip).toHaveAttribute('data-placement', 'left');
+    });
+  });
+
+  describe('Data Handling', () => {
+    it('handles empty data object', () => {
+      const propsWithEmptyData = {
+        ...mockProps,
+        data: {},
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithEmptyData} />);
+      
+      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Option Label');
+    });
+
+    it('handles null data', () => {
+      const propsWithNullData = {
+        ...mockProps,
+        data: null,
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithNullData} />);
+      
+      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Option Label');
+    });
+
+    it('handles undefined data', () => {
+      const propsWithUndefinedData = {
+        ...mockProps,
+        data: undefined,
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithUndefinedData} />);
+      
+      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Option Label');
+    });
+
+    it('prioritizes description over tooltip text', () => {
+      const propsWithBoth = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: 'Description text',
+          tooltip: 'Tooltip text',
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithBoth} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('Description text');
+      expect(tooltipContent).not.toHaveTextContent('Tooltip text');
+    });
+  });
+
+  describe('Content Variations', () => {
+    it('renders with string children', () => {
+      const stringProps = {
+        ...mockProps,
+        children: 'String Content',
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...stringProps} />);
+      
+      expect(screen.getByTestId('multi-value-label')).toHaveTextContent('String Content');
+    });
+
+    it('renders with React element children', () => {
+      const elementProps = {
+        ...mockProps,
+        children: <span data-testid="custom-child">Custom Element</span>,
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...elementProps} />);
+      
+      expect(screen.getByTestId('custom-child')).toHaveTextContent('Custom Element');
+    });
+
+    it('renders with complex data structure', () => {
+      const complexProps = {
+        ...mockProps,
+        data: {
+          value: 'complex-option',
+          label: 'Complex Option',
+          description: 'A very detailed description of this complex option',
+          tooltip: 'Additional tooltip information',
+          extraField: 'This should be ignored',
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...complexProps} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('A very detailed description of this complex option');
+    });
+  });
+
+  describe('Accessibility', () => {
+    it('has proper tooltip structure for screen readers', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const tooltip = screen.getByTestId('tooltip');
+      expect(tooltip).toHaveAttribute('id', 'MultiValueLabel');
+      
+      const trigger = screen.getByTestId('tooltip-trigger');
+      expect(trigger).toBeInTheDocument();
+    });
+
+    it('provides accessible tooltip content', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toBeInTheDocument();
+      expect(tooltipContent).toHaveTextContent('This is a test option description');
+    });
+  });
+
+  describe('Integration with React Select', () => {
+    it('works as MultiValueLabel component', () => {
+      render(<QEAssistMultiSelectOptionTooltip {...mockProps} />);
+      
+      const multiValueLabel = screen.getByTestId('multi-value-label');
+      expect(multiValueLabel).toBeInTheDocument();
+      expect(multiValueLabel).toHaveTextContent('Option Label');
+    });
+
+    it('passes through additional props to MultiValueLabel', () => {
+      const propsWithExtras = {
+        ...mockProps,
+        className: 'custom-class',
+        'data-custom': 'custom-value',
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithExtras} />);
+      
+      const multiValueLabel = screen.getByTestId('multi-value-label');
+      expect(multiValueLabel).toHaveAttribute('className', 'custom-class');
+      expect(multiValueLabel).toHaveAttribute('data-custom', 'custom-value');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('handles empty string description', () => {
+      const propsWithEmptyDescription = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: '',
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithEmptyDescription} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('This is a tooltip text');
+    });
+
+    it('handles empty string tooltip', () => {
+      const propsWithEmptyTooltip = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: undefined,
+          tooltip: '',
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithEmptyTooltip} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('Option Label');
+    });
+
+    it('handles empty children', () => {
+      const propsWithEmptyChildren = {
+        ...mockProps,
+        children: '',
+        data: {
+          ...mockProps.data,
+          description: undefined,
+          tooltip: undefined,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithEmptyChildren} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent('');
+    });
+
+    it('handles null children', () => {
+      const propsWithNullChildren = {
+        ...mockProps,
+        children: null,
+        data: {
+          ...mockProps.data,
+          description: undefined,
+          tooltip: undefined,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithNullChildren} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toBeInTheDocument();
+    });
+
+    it('handles very long description text', () => {
+      const longDescription = 'A'.repeat(1000);
+      const propsWithLongDescription = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: longDescription,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithLongDescription} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent(longDescription);
+    });
+
+    it('handles special characters in description', () => {
+      const specialCharsDescription = 'Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?';
+      const propsWithSpecialChars = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: specialCharsDescription,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithSpecialChars} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent(specialCharsDescription);
+    });
+
+    it('handles HTML entities in description', () => {
+      const htmlEntitiesDescription = 'HTML entities: &lt;div&gt;&amp;&quot;';
+      const propsWithHtmlEntities = {
+        ...mockProps,
+        data: {
+          ...mockProps.data,
+          description: htmlEntitiesDescription,
+        },
+      };
+      
+      render(<QEAssistMultiSelectOptionTooltip {...propsWithHtmlEntities} />);
+      
+      const tooltipContent = screen.getByTestId('tooltip-content');
+      expect(tooltipContent).toHaveTextContent(htmlEntitiesDescription);
+    });
+  });
+});
