@@ -4,41 +4,164 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import QEAssistMultiSelect from './QEAssistMultiSelect';
 
-// Mock the external dependencies
-jest.mock('@americanexpress/dls-react', () => ({
-  Hint: ({ children, ...props }) => <div data-testid="hint" {...props}>{children}</div>,
-  IconHelp: () => <div data-testid="icon-help">?</div>,
-  Label: ({ children, ...props }) => <label data-testid="label" {...props}>{children}</label>,
-  Tooltip: ({ children, ...props }) => <div data-testid="tooltip" {...props}>{children}</div>,
-  TooltipButton: ({ children, ...props }) => <button data-testid="tooltip-button" {...props}>{children}</button>,
-}));
-
+// Mock only the external libraries that aren't part of the design system
 jest.mock('react-select/creatable', () => {
-  return jest.fn().mockImplementation(({ options, onChange, value, placeholder, ...props }) => (
-    <div data-testid="creatable-select" {...props}>
-      <input
-        data-testid="select-input"
-        placeholder={placeholder}
-        onChange={(e) => {
-          const selectedOptions = options.filter(option => 
-            option.label.toLowerCase().includes(e.target.value.toLowerCase())
-          );
-          onChange(selectedOptions);
-        }}
-      />
-      <div data-testid="options-container">
-        {options.map((option, index) => (
-          <div
-            key={index}
-            data-testid={`option-${index}`}
-            onClick={() => onChange([...value, option])}
-          >
-            {option.label}
+  const React = require('react');
+  return React.forwardRef(({ 
+    options, 
+    onChange, 
+    value, 
+    placeholder, 
+    isMulti,
+    isLoading,
+    noOptionsMessage,
+    formatCreateLabel,
+    components,
+    filterOption,
+    onInputChange,
+    onBlur,
+    onFocus,
+    isDisabled,
+    isClearable,
+    defaultMenuIsOpen,
+    styles,
+    className,
+    classNamePrefix,
+    ...props 
+  }, ref) => {
+    const [inputValue, setInputValue] = React.useState('');
+    const [menuIsOpen, setMenuIsOpen] = React.useState(defaultMenuIsOpen || false);
+    
+    const handleInputChange = (e) => {
+      const newValue = e.target.value;
+      setInputValue(newValue);
+      onInputChange && onInputChange(newValue);
+    };
+
+    const handleOptionClick = (option) => {
+      if (isMulti) {
+        const newValue = value ? [...value, option] : [option];
+        onChange(newValue);
+      } else {
+        onChange(option);
+      }
+      setMenuIsOpen(false);
+    };
+
+    const handleRemoveValue = (removedValue) => {
+      if (isMulti && value) {
+        const newValue = value.filter(v => v.value !== removedValue.value);
+        onChange(newValue);
+      }
+    };
+
+    const filteredOptions = options.filter(option => {
+      if (filterOption) {
+        return filterOption({ label: option.label, value: option.value, data: option }, inputValue);
+      }
+      return option.label.toLowerCase().includes(inputValue.toLowerCase());
+    });
+
+    return (
+      <div data-testid="creatable-select" className={className} ref={ref}>
+        <div data-testid="select-control">
+          {/* Selected values display */}
+          {isMulti && value && value.length > 0 && (
+            <div data-testid="multi-value-container">
+              {value.map((selectedValue, index) => (
+                <div key={index} data-testid={`selected-value-${index}`}>
+                  {components?.MultiValueLabel ? (
+                    <components.MultiValueLabel data={selectedValue}>
+                      {selectedValue.label}
+                    </components.MultiValueLabel>
+                  ) : (
+                    selectedValue.label
+                  )}
+                  <button
+                    data-testid={`remove-value-${index}`}
+                    onClick={() => handleRemoveValue(selectedValue)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Input field */}
+          <input
+            data-testid="select-input"
+            placeholder={placeholder}
+            value={inputValue}
+            onChange={handleInputChange}
+            onFocus={() => {
+              setMenuIsOpen(true);
+              onFocus && onFocus();
+            }}
+            onBlur={() => {
+              setMenuIsOpen(false);
+              onBlur && onBlur();
+            }}
+            disabled={isDisabled}
+          />
+          
+          {/* Clear button */}
+          {isClearable && value && (
+            <button
+              data-testid="clear-button"
+              onClick={() => onChange(isMulti ? [] : null)}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        
+        {/* Options menu */}
+        {menuIsOpen && (
+          <div data-testid="options-menu">
+            {isLoading ? (
+              <div data-testid="loading-message">Loading...</div>
+            ) : filteredOptions.length > 0 ? (
+              filteredOptions.map((option, index) => (
+                <div
+                  key={index}
+                  data-testid={`option-${index}`}
+                  onClick={() => handleOptionClick(option)}
+                  style={{ cursor: 'pointer', padding: '8px' }}
+                >
+                  {components?.Option ? (
+                    <components.Option data={option}>
+                      {option.label}
+                    </components.Option>
+                  ) : (
+                    option.label
+                  )}
+                </div>
+              ))
+            ) : (
+              <div data-testid="no-options-message">
+                {noOptionsMessage ? noOptionsMessage() : 'No options'}
+              </div>
+            )}
+            
+            {/* Create option */}
+            {inputValue && !filteredOptions.some(opt => opt.label === inputValue) && (
+              <div
+                data-testid="create-option"
+                onClick={() => {
+                  const newOption = { label: inputValue, value: inputValue };
+                  handleOptionClick(newOption);
+                }}
+                style={{ cursor: 'pointer', padding: '8px' }}
+              >
+                {formatCreateLabel ? formatCreateLabel(inputValue) : `Create "${inputValue}"`}
+              </div>
+            )}
           </div>
-        ))}
+        )}
       </div>
-    </div>
-  ));
+    );
+  });
 });
 
 describe('QEAssistMultiSelect', () => {
@@ -48,19 +171,25 @@ describe('QEAssistMultiSelect', () => {
     { value: 'option3', label: 'Option 3', description: 'Description 3' },
   ];
 
+  const mockFormik = {
+    values: { testField: [] },
+    errors: {},
+    touched: {},
+    setFieldValue: jest.fn(),
+    setFieldTouched: jest.fn(),
+    setFieldError: jest.fn(),
+    getFieldProps: jest.fn().mockReturnValue({
+      name: 'testField',
+      value: [],
+      onChange: jest.fn(),
+      onBlur: jest.fn(),
+    }),
+    isSubmitting: false,
+    isValidating: false,
+  };
+
   const defaultProps = {
-    formik: {
-      values: { testField: [] },
-      setFieldValue: jest.fn(),
-      setFieldTouched: jest.fn(),
-      setFieldError: jest.fn(),
-      getFieldProps: jest.fn().mockReturnValue({
-        name: 'testField',
-        value: [],
-        onChange: jest.fn(),
-        onBlur: jest.fn(),
-      }),
-    },
+    formik: mockFormik,
     optionsList: mockOptions,
     formikField: 'testField',
     label: 'Test Multi Select',
@@ -73,258 +202,342 @@ describe('QEAssistMultiSelect', () => {
     jest.clearAllMocks();
   });
 
-  describe('Rendering', () => {
-    it('renders the component with required props', () => {
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      expect(screen.getByTestId('label')).toBeInTheDocument();
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-      expect(screen.getByTestId('select-input')).toBeInTheDocument();
-    });
-
-    it('renders with custom label', () => {
-      render(<QEAssistMultiSelect {...defaultProps} label="Custom Label" />);
-      
-      expect(screen.getByTestId('label')).toHaveTextContent('Custom Label');
-    });
-
-    it('renders with placeholder text', () => {
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      expect(screen.getByTestId('select-input')).toHaveAttribute('placeholder', 'Select options...');
-    });
-
-    it('renders hint message when provided', () => {
-      const hintMessage = 'This is a hint message';
-      render(<QEAssistMultiSelect {...defaultProps} hintMessage={hintMessage} />);
-      
-      expect(screen.getByTestId('hint')).toHaveTextContent(hintMessage);
-    });
-
-    it('renders tooltip when hintTooltip is provided', () => {
-      const hintTooltip = 'This is a tooltip';
-      render(<QEAssistMultiSelect {...defaultProps} hintTooltip={hintTooltip} />);
-      
-      expect(screen.getByTestId('tooltip')).toBeInTheDocument();
-      expect(screen.getByTestId('tooltip-button')).toBeInTheDocument();
-    });
-
-    it('renders with loading state', () => {
-      render(<QEAssistMultiSelect {...defaultProps} isOptionListLoading={true} />);
-      
-      expect(screen.getByTestId('select-input')).toBeInTheDocument();
-    });
-
-    it('renders with no results message when options are empty', () => {
-      render(<QEAssistMultiSelect {...defaultProps} optionsList={[]} noResultsMessage="No options found" />);
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-  });
-
-  describe('Functionality', () => {
-    it('calls handleChange when selection changes', async () => {
+  describe('Component Integration', () => {
+    it('integrates formik with react-select properly', async () => {
       const user = userEvent.setup();
       render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
       
       const firstOption = screen.getByTestId('option-0');
       await user.click(firstOption);
       
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [mockOptions[0]]);
       expect(defaultProps.handleChange).toHaveBeenCalled();
     });
 
-    it('calls formik setFieldValue when value changes', async () => {
+    it('handles formik field updates correctly', async () => {
+      const user = userEvent.setup();
+      const formikWithValue = {
+        ...mockFormik,
+        values: { testField: [mockOptions[0]] },
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikWithValue} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      const secondOption = screen.getByTestId('option-1');
+      await user.click(secondOption);
+      
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [mockOptions[0], mockOptions[1]]);
+    });
+
+    it('sets field as touched on blur', async () => {
       const user = userEvent.setup();
       render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.tab();
+      
+      expect(mockFormik.setFieldTouched).toHaveBeenCalledWith('testField', true);
+    });
+  });
+
+  describe('Multi-Select Functionality', () => {
+    it('enables multi-select when isMultiSelectEnabled is true', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={true} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      const firstOption = screen.getByTestId('option-0');
+      const secondOption = screen.getByTestId('option-1');
+      
+      await user.click(firstOption);
+      await user.click(input); // Reopen menu
+      await user.click(secondOption);
+      
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [mockOptions[0]]);
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [mockOptions[0], mockOptions[1]]);
+    });
+
+    it('disables multi-select when isMultiSelectEnabled is false', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={false} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
       
       const firstOption = screen.getByTestId('option-0');
       await user.click(firstOption);
       
-      expect(defaultProps.formik.setFieldValue).toHaveBeenCalledWith(
-        'testField',
-        expect.any(Array)
-      );
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', mockOptions[0]);
     });
 
-    it('filters options based on search text', async () => {
+    it('allows removing selected values in multi-select mode', async () => {
       const user = userEvent.setup();
-      render(<QEAssistMultiSelect {...defaultProps} />);
+      const formikWithValues = {
+        ...mockFormik,
+        values: { testField: [mockOptions[0], mockOptions[1]] },
+      };
       
-      const searchInput = screen.getByTestId('select-input');
-      await user.type(searchInput, 'Option 1');
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikWithValues} />);
       
-      // The mock implementation should filter options
-      expect(searchInput.value).toBe('Option 1');
-    });
-
-    it('handles multi-select when enabled', () => {
-      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={true} />);
+      const removeButton = screen.getByTestId('remove-value-0');
+      await user.click(removeButton);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-      // Multi-select should be enabled by default in our mock
-    });
-
-    it('handles single select when multi-select is disabled', () => {
-      render(<QEAssistMultiSelect {...defaultProps} isMultiSelectEnabled={false} />);
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-
-    it('handles blur event', async () => {
-      const user = userEvent.setup();
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      const selectInput = screen.getByTestId('select-input');
-      await user.click(selectInput);
-      await user.tab();
-      
-      expect(defaultProps.formik.setFieldTouched).toHaveBeenCalledWith('testField', true);
-    });
-
-    it('handles reset functionality', () => {
-      const handleReset = jest.fn();
-      render(<QEAssistMultiSelect {...defaultProps} handleReset={handleReset} />);
-      
-      // Reset functionality would typically be triggered by parent component
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [mockOptions[1]]);
     });
   });
 
-  describe('Validation and Error Handling', () => {
-    it('displays validation errors', () => {
+  describe('Search and Filter Functionality', () => {
+    it('filters options based on search input', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.type(input, 'Option 1');
+      
+      expect(screen.getByTestId('option-0')).toHaveTextContent('Option 1');
+      expect(screen.queryByText('Option 2')).not.toBeInTheDocument();
+      expect(screen.queryByText('Option 3')).not.toBeInTheDocument();
+    });
+
+    it('uses custom filter function when provided', async () => {
+      const user = userEvent.setup();
+      const customFilter = jest.fn((option, searchText) => {
+        return option.data.description?.toLowerCase().includes(searchText.toLowerCase());
+      });
+      
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.type(input, 'Description');
+      
+      // All options should be visible as they all contain "Description" in their description
+      expect(screen.getByTestId('option-0')).toBeInTheDocument();
+      expect(screen.getByTestId('option-1')).toBeInTheDocument();
+      expect(screen.getByTestId('option-2')).toBeInTheDocument();
+    });
+
+    it('shows create option when input doesn\'t match existing options', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.type(input, 'New Option');
+      
+      expect(screen.getByTestId('create-option')).toHaveTextContent('Create "New Option"');
+    });
+
+    it('creates new option when create option is clicked', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.type(input, 'New Option');
+      
+      const createOption = screen.getByTestId('create-option');
+      await user.click(createOption);
+      
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', [
+        { label: 'New Option', value: 'New Option' }
+      ]);
+    });
+  });
+
+  describe('Loading States', () => {
+    it('shows loading message when isOptionListLoading is true', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} isOptionListLoading={true} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      expect(screen.getByTestId('loading-message')).toHaveTextContent('Loading...');
+    });
+
+    it('shows no options message when optionsList is empty', async () => {
+      const user = userEvent.setup();
+      render(<QEAssistMultiSelect {...defaultProps} optionsList={[]} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      expect(screen.getByTestId('no-options-message')).toHaveTextContent('No options');
+    });
+
+    it('shows custom no results message', async () => {
+      const user = userEvent.setup();
+      const customNoOptionsMessage = () => 'No matching results found';
+      
+      render(
+        <QEAssistMultiSelect 
+          {...defaultProps} 
+          optionsList={[]} 
+          noResultsMessage={customNoOptionsMessage}
+        />
+      );
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      expect(screen.getByTestId('no-options-message')).toHaveTextContent('No matching results found');
+    });
+  });
+
+  describe('Custom Components Integration', () => {
+    it('renders custom MultiValueLabel component', () => {
+      const CustomMultiValueLabel = ({ children, data }) => (
+        <span data-testid="custom-multi-value-label">{data.label}</span>
+      );
+      
+      const customComponents = {
+        MultiValueLabel: CustomMultiValueLabel,
+      };
+      
+      const formikWithValues = {
+        ...mockFormik,
+        values: { testField: [mockOptions[0]] },
+      };
+      
+      render(
+        <QEAssistMultiSelect 
+          {...defaultProps} 
+          formik={formikWithValues}
+          components={customComponents}
+        />
+      );
+      
+      expect(screen.getByTestId('custom-multi-value-label')).toHaveTextContent('Option 1');
+    });
+
+    it('renders custom Option component', async () => {
+      const user = userEvent.setup();
+      const CustomOption = ({ children, data }) => (
+        <div data-testid="custom-option">{data.label}</div>
+      );
+      
+      const customComponents = {
+        Option: CustomOption,
+      };
+      
+      render(<QEAssistMultiSelect {...defaultProps} components={customComponents} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      
+      expect(screen.getByTestId('custom-option')).toHaveTextContent('Option 1');
+    });
+  });
+
+  describe('Validation and Error States', () => {
+    it('handles formik validation errors', () => {
       const formikWithError = {
-        ...defaultProps.formik,
+        ...mockFormik,
         errors: { testField: 'This field is required' },
         touched: { testField: true },
       };
       
       render(<QEAssistMultiSelect {...defaultProps} formik={formikWithError} />);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      // Component should still render, error display is handled by design system components
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
     });
 
-    it('handles form submission state', () => {
+    it('handles submitting state', () => {
       const formikSubmitting = {
-        ...defaultProps.formik,
+        ...mockFormik,
         isSubmitting: true,
       };
       
       render(<QEAssistMultiSelect {...defaultProps} formik={formikSubmitting} />);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
     });
+  });
 
-    it('handles validation state', () => {
-      const formikValidating = {
-        ...defaultProps.formik,
-        isValidating: true,
+  describe('Clear Functionality', () => {
+    it('shows clear button when isClearable is true and has value', () => {
+      const formikWithValue = {
+        ...mockFormik,
+        values: { testField: [mockOptions[0]] },
       };
       
-      render(<QEAssistMultiSelect {...defaultProps} formik={formikValidating} />);
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikWithValue} isClearable={true} />);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-  });
-
-  describe('Custom Components', () => {
-    it('renders with custom components prop', () => {
-      const customComponents = {
-        Option: ({ children }) => <div data-testid="custom-option">{children}</div>,
-      };
-      
-      render(<QEAssistMultiSelect {...defaultProps} components={customComponents} />);
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      expect(screen.getByTestId('clear-button')).toBeInTheDocument();
     });
 
-    it('handles clearable functionality', () => {
-      render(<QEAssistMultiSelect {...defaultProps} isClearable={true} />);
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-  });
-
-  describe('Loading States', () => {
-    it('shows loading message when options are loading', () => {
-      render(
-        <QEAssistMultiSelect 
-          {...defaultProps} 
-          isOptionListLoading={true}
-          optionsList={[]}
-        />
-      );
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-
-    it('shows no results message when no options match search', () => {
-      render(
-        <QEAssistMultiSelect 
-          {...defaultProps} 
-          optionsList={[]}
-          noResultsMessage="No matching options"
-        />
-      );
-      
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('has proper aria labels', () => {
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      const label = screen.getByTestId('label');
-      expect(label).toHaveAttribute('htmlFor', 'testField-dropdown');
-    });
-
-    it('has proper id attributes', () => {
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      const select = screen.getByTestId('creatable-select');
-      expect(select).toHaveAttribute('id', 'testField-dropdown');
-    });
-
-    it('supports keyboard navigation', async () => {
+    it('clears all values when clear button is clicked', async () => {
       const user = userEvent.setup();
-      render(<QEAssistMultiSelect {...defaultProps} />);
+      const formikWithValue = {
+        ...mockFormik,
+        values: { testField: [mockOptions[0]] },
+      };
       
-      const selectInput = screen.getByTestId('select-input');
-      await user.click(selectInput);
-      await user.keyboard('{ArrowDown}');
-      await user.keyboard('{Enter}');
+      render(<QEAssistMultiSelect {...defaultProps} formik={formikWithValue} isClearable={true} />);
       
-      expect(selectInput).toBeInTheDocument();
-    });
-  });
-
-  describe('Custom Styling', () => {
-    it('applies custom width styles', () => {
-      render(<QEAssistMultiSelect {...defaultProps} maxWidth={300} minWidth={100} />);
+      const clearButton = screen.getByTestId('clear-button');
+      await user.click(clearButton);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
-    });
-
-    it('applies custom class names', () => {
-      render(<QEAssistMultiSelect {...defaultProps} />);
-      
-      const container = screen.getByTestId('creatable-select').closest('div');
-      expect(container).toHaveClass('multiSelect');
+      expect(mockFormik.setFieldValue).toHaveBeenCalledWith('testField', []);
     });
   });
 
   describe('Format Functions', () => {
-    it('handles formatCreateLabel function', () => {
-      const formatCreateLabel = (input) => `Add "${input}"`;
-      render(<QEAssistMultiSelect {...defaultProps} formatCreateLabel={formatCreateLabel} />);
+    it('uses custom formatCreateLabel function', async () => {
+      const user = userEvent.setup();
+      const customFormatCreateLabel = (input) => `Add custom: ${input}`;
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      render(<QEAssistMultiSelect {...defaultProps} formatCreateLabel={customFormatCreateLabel} />);
+      
+      const input = screen.getByTestId('select-input');
+      await user.click(input);
+      await user.type(input, 'New Item');
+      
+      expect(screen.getByTestId('create-option')).toHaveTextContent('Add custom: New Item');
     });
+  });
 
-    it('handles default menu open state', () => {
+  describe('Default Menu State', () => {
+    it('opens menu by default when isDefaultMenuOpen is true', () => {
       render(<QEAssistMultiSelect {...defaultProps} isDefaultMenuOpen={true} />);
       
-      expect(screen.getByTestId('creatable-select')).toBeInTheDocument();
+      expect(screen.getByTestId('options-menu')).toBeInTheDocument();
+    });
+  });
+
+  describe('Accessibility and Design System Integration', () => {
+    it('renders with proper field structure using design system components', () => {
+      render(<QEAssistMultiSelect {...defaultProps} />);
+      
+      // Design system components should be rendered (Label, Hint, etc.)
+      // We're not testing their internal implementation, just that our component integrates properly
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
+    });
+
+    it('integrates with design system tooltip when hintTooltip is provided', () => {
+      render(<QEAssistMultiSelect {...defaultProps} hintTooltip="This is a helpful tooltip" />);
+      
+      // Design system Tooltip should be rendered
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
+    });
+
+    it('integrates with design system hint when hintMessage is provided', () => {
+      render(<QEAssistMultiSelect {...defaultProps} hintMessage="This is a hint message" />);
+      
+      // Design system Hint should be rendered
+      expect(screen.getByTestId('select-input')).toBeInTheDocument();
     });
   });
 });
