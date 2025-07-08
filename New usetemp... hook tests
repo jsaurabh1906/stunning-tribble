@@ -1,0 +1,561 @@
+import { renderHook, act } from '@testing-library/react';
+import { useTempGenerateQuestions } from './useTempGenerateQuestions';
+
+// Mock dependencies
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('./fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+describe('useTempGenerateQuestions', () => {
+  let mockUseFetchye;
+  let mockUseSelector;
+  let mockStore;
+
+  beforeEach(() => {
+    // Reset mocks
+    mockUseFetchye = require('./fetchye').useFetchye;
+    mockUseSelector = require('react-redux').useSelector;
+    mockStore = createMockStore();
+    
+    // Default mock implementations
+    mockUseSelector.mockImplementation((selector) => 
+      selector({ config: { qeAssistUrl: 'https://test-api.com' } })
+    );
+    
+    mockUseFetchye.mockReturnValue({
+      isLoading: false,
+      run: jest.fn(),
+      data: null,
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Initial State', () => {
+    it('should return initial state correctly', () => {
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      expect(result.current).toEqual({
+        isEnhancingFeature: false,
+        enhanceFeature: expect.any(Function),
+        enhanceFeatureResponse: null,
+        isGeneratingQuestions: false,
+        generateQuestions: expect.any(Function),
+        generateQuestionsData: null,
+      });
+    });
+  });
+
+  describe('Feature Enhancement', () => {
+    it('should handle successful feature enhancement', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            enhanced_feature: {
+              description: 'Enhanced description',
+              acceptance_criteria: 'Enhanced criteria',
+            },
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      const payload = {
+        feature_details: 'Test feature',
+        document_IDs: ['doc1', 'doc2'],
+        question_set: 'test_questions',
+      };
+
+      await act(async () => {
+        await result.current.enhanceFeature(payload);
+      });
+
+      expect(mockUseFetchye().run).toHaveBeenCalledWith();
+      expect(result.current.enhanceFeatureResponse).toEqual(mockResponse.data.body.enhanced_feature);
+    });
+
+    it('should handle feature enhancement with non-200 status', async () => {
+      const mockResponse = {
+        data: {
+          status: 400,
+          body: { error: 'Bad request' },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature({});
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error enhancing feature:', 400);
+      expect(result.current.enhanceFeatureResponse).toBe('error');
+    });
+
+    it('should handle feature enhancement API errors', async () => {
+      const mockError = new Error('Network error');
+      
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockRejectedValue(mockError),
+        data: null,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature({});
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error inside generate Question:', mockError);
+      expect(result.current.enhanceFeatureResponse).toBe('error');
+    });
+
+    it('should return isEnhancingFeature as true when loading', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: true,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      expect(result.current.isEnhancingFeature).toBe(true);
+    });
+  });
+
+  describe('Question Generation', () => {
+    it('should handle successful question generation', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            questions: [
+              {
+                question: 'What is the feature?',
+                answer: 'Test answer',
+                questionNumber: 1,
+              },
+            ],
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(result.current.generateQuestionsData).toEqual({
+        score: undefined,
+        scoreCriteria: undefined,
+        docIds: undefined,
+        botQA: undefined,
+        questionSet: [
+          {
+            question: 'What is the feature?',
+            answer: 'Test answer',
+            questionNumber: 1,
+          },
+        ],
+      });
+    });
+
+    it('should handle question generation with invalid format', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            questions: 'invalid format',
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('warn invalid questions format. Raw:', 'invalid format');
+      expect(result.current.generateQuestionsData).toBe('error');
+    });
+
+    it('should handle question generation with non-200 status', async () => {
+      const mockResponse = {
+        data: {
+          status: 500,
+          body: { error: 'Internal server error' },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'info').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('warn unexpected response or missing question field:', mockResponse.data);
+      expect(result.current.generateQuestionsData).toBe('error');
+    });
+
+    it('should handle question generation API errors', async () => {
+      const mockError = new Error('API Error');
+      
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockRejectedValue(mockError),
+        data: null,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error inside generate Question:', mockError);
+      expect(result.current.generateQuestionsData).toBe('error');
+    });
+
+    it('should return isGeneratingQuestions as true when loading', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: true,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      expect(result.current.isGeneratingQuestions).toBe(true);
+    });
+
+    it('should handle questions with all expected fields', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            doc_id: 'doc123',
+            overall_all_score: 85,
+            scoring_criteria: 'test criteria',
+            questions_and_answers: [
+              {
+                question: 'Test question 1',
+                answer: 'Test answer 1',
+              },
+              {
+                question: 'Test question 2',
+                answer: 'Test answer 2',
+              },
+            ],
+            questions: [
+              {
+                question: 'Test question 1',
+                answer: 'Test answer 1',
+              },
+              {
+                question: 'Test question 2',
+                answer: 'Test answer 2',
+              },
+            ],
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(result.current.generateQuestionsData).toEqual({
+        score: 85,
+        scoreCriteria: 'test criteria',
+        docIds: 'doc123',
+        botQA: [
+          {
+            question: 'Test question 1',
+            answer: 'Test answer 1',
+          },
+          {
+            question: 'Test question 2',
+            answer: 'Test answer 2',
+          },
+        ],
+        questionSet: [
+          {
+            question: 'Test question 1',
+            answer: 'Test answer 1',
+            questionNumber: 1,
+          },
+          {
+            question: 'Test question 2',
+            answer: 'Test answer 2',
+            questionNumber: 2,
+          },
+        ],
+      });
+    });
+  });
+
+  describe('API Configuration', () => {
+    it('should use correct API endpoints', () => {
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      // Check that useFetchye is called with correct URLs
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        expect.stringContaining('/api/enhance/feature'),
+        expect.any(Object)
+      );
+      
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        expect.stringContaining('/api/scoreAndQuestions'),
+        expect.any(Object)
+      );
+    });
+
+    it('should handle missing qeAssistUrl', () => {
+      mockUseSelector.mockImplementation((selector) => 
+        selector({ config: { qeAssistUrl: null } })
+      );
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      expect(result.current).toBeDefined();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle empty response data', async () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(null),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(result.current.generateQuestionsData).toBe('error');
+    });
+
+    it('should handle malformed JSON in questions', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            questions: 'not valid json',
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(result.current.generateQuestionsData).toBe('error');
+    });
+
+    it('should handle successful responses without question numbers', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            questions: [
+              { question: 'Q1', answer: 'A1' },
+              { question: 'Q2', answer: 'A2' },
+            ],
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        await result.current.generateQuestions();
+      });
+
+      expect(result.current.generateQuestionsData.questionSet).toEqual([
+        { question: 'Q1', answer: 'A1', questionNumber: 1 },
+        { question: 'Q2', answer: 'A2', questionNumber: 2 },
+      ]);
+    });
+  });
+
+  describe('Return Values', () => {
+    it('should return success from enhanceFeature on successful request', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: { enhanced_feature: { description: 'test' } },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature({});
+        expect(response).toBe('success');
+      });
+    });
+
+    it('should return error from enhanceFeature on failed request', async () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockRejectedValue(new Error('Test error')),
+        data: null,
+      });
+
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.enhanceFeature({});
+        expect(response).toBe('error');
+      });
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should return success from generateQuestions on successful request', async () => {
+      const mockResponse = {
+        data: {
+          status: 200,
+          body: {
+            questions: [{ question: 'test', answer: 'test' }],
+          },
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn().mockResolvedValue(mockResponse),
+        data: mockResponse,
+      });
+
+      const { result } = renderHook(() => useTempGenerateQuestions(), {
+        wrapper: createWrapper(mockStore),
+      });
+
+      await act(async () => {
+        const response = await result.current.generateQuestions();
+        expect(response).toBe('success');
+      });
+    });
+  });
+});
