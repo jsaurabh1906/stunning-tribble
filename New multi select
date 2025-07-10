@@ -1,0 +1,74 @@
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import QEAssistMultiSelect from './QEAssistMultiSelect';
+
+const mockProps = {
+  formik: {
+    setFieldValue: jest.fn(),
+  },
+  optionsList: [
+    { value: '1', dataLabel: 'Alpha', label: 'Alpha Option', description: 'First Option' },
+    { value: '2', dataLabel: 'Beta', label: 'Beta Option', description: 'Second Option' },
+  ],
+  isOptionListLoading: false,
+  handleChange: jest.fn(),
+  isMultiSelectEnabled: true,
+  formikField: 'testField',
+  label: 'Test Label',
+  placeholder: 'Select option...',
+  noResultsMessage: 'No options found',
+  hintMessage: 'Helpful hint',
+  hintTooltip: true,
+  isDefaultMenuOpen: false,
+  formatCreateLabel: jest.fn((input) => `Create "${input}"`),
+  isClearable: true,
+  maxWidth: 300,
+  minWidth: 200,
+};
+
+afterEach(() => {
+  jest.clearAllMocks();
+});
+
+test('renders label and placeholder', () => {
+  render(<QEAssistMultiSelect {...mockProps} />);
+  expect(screen.getByLabelText('Test Label')).toBeInTheDocument();
+  expect(screen.getByText('Select option...')).toBeInTheDocument();
+});
+
+test('displays loading message when isOptionListLoading is true', () => {
+  render(<QEAssistMultiSelect {...mockProps} isOptionListLoading={true} />);
+  expect(screen.getByText('Loading')).toBeInTheDocument();
+});
+
+test('displays noResultsMessage when isOptionListLoading is false', () => {
+  render(<QEAssistMultiSelect {...mockProps} isOptionListLoading={false} />);
+  expect(screen.getByText('No options found')).toBeInTheDocument();
+});
+
+test('renders hint tooltip when hintMessage and hintTooltip are true', () => {
+  render(<QEAssistMultiSelect {...mockProps} />);
+  expect(screen.getByText('Helpful hint')).toBeInTheDocument();
+});
+
+test('calls handleChange on option select', () => {
+  render(<QEAssistMultiSelect {...mockProps} />);
+
+  const input = screen.getByLabelText('Test Label');
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(mockProps.handleChange).toHaveBeenCalled();
+});
+
+test('filters options using custom filter', async () => {
+  render(<QEAssistMultiSelect {...mockProps} />);
+  const input = screen.getByRole('textbox');
+
+  await userEvent.type(input, 'beta');
+
+  expect(screen.getByText('Beta Option')).toBeInTheDocument();
+  expect(screen.queryByText('Alpha Option')).not.toBeInTheDocument();
+});
