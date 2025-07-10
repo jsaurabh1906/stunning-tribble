@@ -1,0 +1,200 @@
+import React from 'react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import EnhanceStep4 from '../EnhanceStep4';
+import { EnhancedFeatureContext } from '../../../context/EnahncedFeatureContext';
+import { useTempGenerateQuestions } from '../../../hooks/useTempGenerateApis';
+import { useAuthData } from '../../../hooks/useAuthData';
+import { useFetchye } from 'fetchye';
+
+// ✅ Mock hooks
+jest.mock('../../../hooks/useTempGenerateApis');
+jest.mock('../../../hooks/useAuthData');
+jest.mock('fetchye');
+
+const mockSetFeatureDetails = jest.fn();
+const mockSetCurrentStep = jest.fn();
+
+const defaultContext = {
+  featureDetails: {
+    featureObjectId: '123',
+    featureName: 'Test Feature',
+    featureType: 'New Feature',
+    featureNotes: 'Initial notes',
+    enhancedDescription: 'Updated Description',
+    enhancedAcceptanceCriteria: 'Updated Criteria',
+    currentScore: 6.3,
+    enhancedScore: 8.7,
+    featureReference: 'JIRA-123',
+    featureContainerName: 'Platform',
+    tempPayload: 'mocked-payload',
+  },
+  setFeatureDetails: mockSetFeatureDetails,
+  setCurrentStep: mockSetCurrentStep,
+};
+
+const mockUser = {
+  userId: 'u1',
+  fullName: 'Test User',
+  emailId: 'test@org.com',
+};
+
+const setup = (context = defaultContext) => {
+  return render(
+    <EnhancedFeatureContext.Provider value={context}>
+      <EnhanceStep4 />
+    </EnhancedFeatureContext.Provider>
+  );
+};
+
+describe('EnhanceStep4', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    useTempGenerateQuestions.mockReturnValue({
+      isGeneratingQuestions: false,
+      generateQuestions: jest.fn(() => Promise.resolve('mocked-result')),
+    });
+
+    useAuthData.mockReturnValue([mockUser]);
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      status: null,
+      body: {},
+    });
+  });
+
+  it('renders all labels and initial data correctly', () => {
+    setup();
+
+    expect(screen.getByText('Enhanced Feature Details')).toBeInTheDocument();
+    expect(screen.getByLabelText('Feature Name')).toHaveValue('Test Feature');
+    expect(screen.getByText('Current Score: 6.3/10')).toBeInTheDocument();
+    expect(screen.getByText('Enhanced Score: 8.70/10')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Updated Description')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Updated Criteria')).toBeInTheDocument();
+  });
+
+  it('handles input changes and updates local state', () => {
+    setup();
+
+    fireEvent.change(screen.getByLabelText('Feature Name'), {
+      target: { value: 'New Name' },
+    });
+
+    fireEvent.change(screen.getAllByDisplayValue('Updated Description')[1], {
+      target: { value: 'New Desc' },
+    });
+
+    fireEvent.change(screen.getAllByDisplayValue('Updated Criteria')[1], {
+      target: { value: 'New Criteria' },
+    });
+
+    expect(screen.getByDisplayValue('New Name')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('New Desc')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('New Criteria')).toBeInTheDocument();
+  });
+
+  it('handles "Refine Again" (generateQuestions) and navigates back a step', async () => {
+    const generateQuestions = jest.fn(() => Promise.resolve('not error'));
+    useTempGenerateQuestions.mockReturnValue({
+      isGeneratingQuestions: false,
+      generateQuestions,
+    });
+
+    setup();
+
+    fireEvent.click(screen.getByText('Refine Again'));
+
+    await waitFor(() =>
+      expect(generateQuestions).toHaveBeenCalledWith({
+        payload: 'mocked-payload',
+        setEnhancedFeatureDetails: expect.any(Function),
+      })
+    );
+
+    await waitFor(() =>
+      expect(mockSetCurrentStep).toHaveBeenCalledWith(expect.any(Function))
+    );
+  });
+
+  it('does not navigate back if generateQuestions returns "error"', async () => {
+    useTempGenerateQuestions.mockReturnValue({
+      isGeneratingQuestions: false,
+      generateQuestions: jest.fn(() => Promise.resolve('error')),
+    });
+
+    setup();
+    fireEvent.click(screen.getByText('Refine Again'));
+
+    await waitFor(() =>
+      expect(mockSetCurrentStep).not.toHaveBeenCalled()
+    );
+  });
+
+  it('handles update rally (success case)', async () => {
+    const run = jest.fn();
+    useFetchye.mockReturnValue({
+      run,
+      status: 200,
+      body: {},
+    });
+
+    setup();
+
+    fireEvent.click(screen.getByText('Update Rally'));
+
+    await waitFor(() =>
+      expect(run).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST' }))
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('User details updated successfully.')).toBeInTheDocument()
+    );
+  });
+
+  it('handles update rally (unauthorized)', async () => {
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      status: 200,
+      body: { httpStatusCode: 'UNAUTHORIZED' },
+    });
+
+    setup();
+
+    fireEvent.click(screen.getByText('Update Rally'));
+
+    await waitFor(() =>
+      expect(screen.getByText('User does not have update permission.')).toBeInTheDocument()
+    );
+  });
+
+  it('closes success toast on clicking close button', async () => {
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      status: 200,
+      body: {},
+    });
+
+    setup();
+
+    fireEvent.click(screen.getByText('Update Rally'));
+
+    await waitFor(() =>
+      expect(screen.getByText('Success')).toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: /close/i })[0]);
+
+    await waitFor(() =>
+      expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    );
+  });
+
+  it('handles Back button', () => {
+    setup();
+    fireEvent.click(screen.getByText('Back'));
+
+    expect(mockSetCurrentStep).toHaveBeenCalledWith(expect.any(Function));
+  });
+});
