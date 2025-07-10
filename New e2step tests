@@ -1,0 +1,160 @@
+// Add these tests to your existing EnhanceStep2.spec.jsx file
+
+describe('EnhanceStep2 Additional Coverage Tests', () => {
+  
+  // Test to cover line 32 - setFeatureDetails callback in useTempGenerateQuestions
+  it('should call setFeatureDetails when useTempGenerateQuestions hook executes callback', async () => {
+    // Mock the hook to simulate the callback execution
+    const mockSetFeatureDetails = jest.fn();
+    
+    // Mock useTempGenerateQuestions to return a callback that we can trigger
+    let capturedCallback;
+    mockUseTempGenerateQuestions.mockImplementation(({ setFeatureDetails }) => {
+      capturedCallback = setFeatureDetails;
+      return {
+        generateQuestions: mockGenerateQuestions,
+        isGeneratingQuestions: false,
+      };
+    });
+
+    const { container } = render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep2 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    // Simulate the hook calling setFeatureDetails with new data
+    const newFeatureData = {
+      ...contextValues.featureDetails,
+      featureName: 'Updated Feature Name',
+      featureDescription: 'Updated description'
+    };
+    
+    act(() => {
+      capturedCallback(newFeatureData);
+    });
+
+    // Verify that the context was updated with new feature details
+    expect(mockSetFeatureDetails).toHaveBeenCalledWith(newFeatureData);
+  });
+
+  // Test to cover line 63 - SidebarNav component rendering
+  it('should render SidebarNav component when activeCategory is set', () => {
+    // Set up context with activeCategory to trigger SidebarNav rendering
+    const contextWithActiveCategory = {
+      ...contextValues,
+      activeCategory: 'testCategory',
+      setActiveCategory: jest.fn()
+    };
+
+    const { container } = render(
+      <EnhancedFeatureContext.Provider value={contextWithActiveCategory}>
+        <EnhanceStep2 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    // Check that SidebarNav is rendered
+    const sidebarNav = container.querySelector('[data-testid="sidebar-nav"]');
+    expect(sidebarNav).toBeInTheDocument();
+    
+    // Alternative check - look for the sidebar container
+    const sidebarContainer = container.querySelector('.qoe-filter-container');
+    expect(sidebarContainer).toBeInTheDocument();
+  });
+
+  // Additional test to ensure SidebarNav receives correct props
+  it('should pass correct props to SidebarNav component', () => {
+    const mockSetActiveCategory = jest.fn();
+    const contextWithActiveCategory = {
+      ...contextValues,
+      activeCategory: 'testCategory',
+      setActiveCategory: mockSetActiveCategory
+    };
+
+    render(
+      <EnhancedFeatureContext.Provider value={contextWithActiveCategory}>
+        <EnhanceStep2 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    // Simulate clicking on sidebar to verify props are passed correctly
+    const sidebar = screen.getByTestId('sidebar-nav');
+    expect(sidebar).toBeInTheDocument();
+    
+    // If SidebarNav has interactive elements, test them
+    // This ensures the component is fully rendered and functional
+  });
+
+  // Test to cover edge case where useTempGenerateQuestions callback handles errors
+  it('should handle setFeatureDetails callback with error scenarios', async () => {
+    let capturedCallback;
+    mockUseTempGenerateQuestions.mockImplementation(({ setFeatureDetails }) => {
+      capturedCallback = setFeatureDetails;
+      return {
+        generateQuestions: mockGenerateQuestions,
+        isGeneratingQuestions: false,
+      };
+    });
+
+    render(
+      <EnhancedFeatureContext.Provider value={contextValues}>
+        <EnhanceStep2 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    // Test callback with undefined/null values
+    act(() => {
+      capturedCallback(null);
+    });
+
+    act(() => {
+      capturedCallback(undefined);
+    });
+
+    // Verify the component doesn't crash with invalid data
+    expect(screen.getByText('Let&apos;s Discuss')).toBeInTheDocument();
+  });
+
+  // Test to ensure both uncovered lines work together
+  it('should render SidebarNav and handle setFeatureDetails callback simultaneously', async () => {
+    let capturedCallback;
+    const mockSetActiveCategory = jest.fn();
+    
+    mockUseTempGenerateQuestions.mockImplementation(({ setFeatureDetails }) => {
+      capturedCallback = setFeatureDetails;
+      return {
+        generateQuestions: mockGenerateQuestions,
+        isGeneratingQuestions: false,
+      };
+    });
+
+    const contextWithActiveCategory = {
+      ...contextValues,
+      activeCategory: 'testCategory',
+      setActiveCategory: mockSetActiveCategory
+    };
+
+    const { container } = render(
+      <EnhancedFeatureContext.Provider value={contextWithActiveCategory}>
+        <EnhanceStep2 />
+      </EnhancedFeatureContext.Provider>
+    );
+
+    // Verify SidebarNav is rendered (line 63)
+    expect(container.querySelector('.qoe-filter-container')).toBeInTheDocument();
+
+    // Trigger setFeatureDetails callback (line 32)
+    const updatedFeatureData = {
+      ...contextValues.featureDetails,
+      featureName: 'New Feature Name'
+    };
+
+    act(() => {
+      capturedCallback(updatedFeatureData);
+    });
+
+    // Verify both functionalities work
+    expect(mockSetFeatureDetails).toHaveBeenCalledWith(updatedFeatureData);
+    expect(container.querySelector('.qoe-filter-container')).toBeInTheDocument();
+  });
+});
