@@ -1,0 +1,575 @@
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { createStore } from 'redux';
+import useScoringApi from './useScoringApi';
+
+// Mock dependencies
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+jest.mock('react-redux', () => ({
+  ...jest.requireActual('react-redux'),
+  useSelector: jest.fn(),
+}));
+
+jest.mock('./useAuthData', () => ({
+  useActiveOrg: jest.fn(),
+  useUserData: jest.fn(),
+}));
+
+jest.mock('../util/logger', () => ({
+  logEvent: jest.fn(),
+}));
+
+import { useFetchye } from 'fetchye';
+import { useSelector } from 'react-redux';
+import { useActiveOrg, useUserData } from './useAuthData';
+import { logEvent } from '../util/logger';
+
+// Mock store setup - using basic Redux createStore
+const createMockStore = (initialState = {}) => {
+  const defaultState = {
+    config: {
+      qeAssistUrl: 'https://api.example.com',
+      ELFEndpoints: 'https://elf.example.com',
+      ...initialState,
+    },
+  };
+
+  const rootReducer = (state = defaultState, action) => {
+    switch (action.type) {
+      default:
+        return state;
+    }
+  };
+
+  return createStore(rootReducer);
+};
+
+// Test wrapper component
+const TestWrapper = ({ children, store }) => (
+  <Provider store={store}>{children}</Provider>
+);
+
+describe('useScoringApi', () => {
+  // Mock implementations
+  const mockUseFetchye = useFetchye as jest.MockedFunction<typeof useFetchye>;
+  const mockUseSelector = useSelector as jest.MockedFunction<typeof useSelector>;
+  const mockUseActiveOrg = useActiveOrg as jest.MockedFunction<typeof useActiveOrg>;
+  const mockUseUserData = useUserData as jest.MockedFunction<typeof useUserData>;
+  const mockLogEvent = logEvent as jest.MockedFunction<typeof logEvent>;
+
+  // Default mock values
+  const mockUser = { id: 'user123', name: 'Test User' };
+  const mockActiveOrg = { code: 'org123' };
+  const mockQeAssistUrl = 'https://api.example.com';
+  const mockElfLogUrl = 'https://elf.example.com';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Setup default mocks
+    mockUseSelector.mockImplementation((selector) => {
+      const state = {
+        config: {
+          qeAssistUrl: mockQeAssistUrl,
+          ELFEndpoints: mockElfLogUrl,
+        },
+      };
+      return selector(state);
+    });
+    
+    mockUseUserData.mockReturnValue(mockUser);
+    mockUseActiveOrg.mockReturnValue(mockActiveOrg);
+  });
+
+  describe('Hook initialization', () => {
+    test('should initialize with correct default values', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(result.current.isScoringLoading).toBe(false);
+      expect(result.current.getScoring).toBeDefined();
+      expect(result.current.scoringData).toBeNull();
+    });
+
+    test('should construct correct API URL for story artifact type', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        `${mockQeAssistUrl}/api/analyze/story`,
+        expect.objectContaining({
+          defer: true,
+          method: 'POST',
+          body: JSON.stringify({
+            artifactType: 'story',
+            user_stories: { test: 'payload' },
+          }),
+        })
+      );
+    });
+
+    test('should construct correct API URL for feature artifact type', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        `${mockQeAssistUrl}/api/analyze/feature`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            artifactType: 'feature',
+            user_stories: { test: 'payload' },
+          }),
+        })
+      );
+    });
+  });
+
+  describe('Successful API response handling', () => {
+    test('should handle successful feature analysis response', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+      
+      const mockScoringData = {
+        status: 200,
+        body: {
+          Feature_Analysis: [
+            { feature_id: 'f1', score: 8.5 },
+            { feature_id: 'f2', score: 7.2 },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: mockScoringData,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { features: ['f1', 'f2'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 'f1',
+            score: 8.5,
+          }),
+          expect.objectContaining({
+            feature_id: 'f2',
+            score: 7.2,
+          }),
+        ])
+      );
+
+      expect(mockLogEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'QE_Assist',
+          event: { event: 'test' },
+          user: mockUser,
+          storyId: expect.any(Array),
+          score: expect.any(Array),
+          organization: mockActiveOrg.code,
+          loggedAt: expect.any(Date),
+        }),
+        'INFO',
+        mockElfLogUrl
+      );
+    });
+
+    test('should handle successful story analysis response', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+      
+      const mockScoringData = {
+        status: 200,
+        body: {
+          user_story_analysis: [
+            { user_story_id: 's1', score: 9.0 },
+            { user_story_id: 's2', score: 6.5 },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: mockScoringData,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { stories: ['s1', 's2'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            user_story_id: 's1',
+            score: 9.0,
+          }),
+          expect.objectContaining({
+            user_story_id: 's2',
+            score: 6.5,
+          }),
+        ])
+      );
+    });
+
+    test('should handle response with mixed scored and unscored items', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+      
+      const mockScoringData = {
+        status: 200,
+        body: {
+          Feature_Analysis: [
+            { feature_id: 'f1', score: 8.5 },
+            { feature_id: 'f2' }, // Missing score
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: mockScoringData,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { features: ['f1', 'f2'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 'f1',
+            score: 8.5,
+          }),
+          expect.objectContaining({
+            feature_id: 'f2',
+            score: 'loading',
+          }),
+        ])
+      );
+    });
+  });
+
+  describe('Error handling', () => {
+    test('should handle API error response (4xx-5xx)', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+      
+      const mockScoringData = {
+        status: 500,
+        body: { error: 'Internal Server Error' },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: mockScoringData,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { features: ['f1', 'f2'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            score: 'error',
+          }),
+        ])
+      );
+    });
+
+    test('should handle missing response data', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: null,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { features: ['f1'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      // Should not call setLlmResponse if no data
+      expect(mockSetLlmResponse).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Loading states', () => {
+    test('should reflect loading state from useFetchye', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: true,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(result.current.isScoringLoading).toBe(true);
+    });
+
+    test('should update loading state when API call completes', async () => {
+      const mockStore = createMockStore();
+      const mockRun = jest.fn();
+      
+      const { rerender } = renderHook(() => {
+        mockUseFetchye.mockReturnValue({
+          isLoading: false,
+          run: mockRun,
+          data: null,
+        });
+        
+        return useScoringApi({
+          artifactType: 'story',
+          llmPayload: { test: 'payload' },
+          setLlmResponse: jest.fn(),
+          eventDetails: { event: 'test' },
+        });
+      }, {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      // Simulate loading state change
+      mockUseFetchye.mockReturnValue({
+        isLoading: true,
+        run: mockRun,
+        data: null,
+      });
+
+      rerender();
+    });
+  });
+
+  describe('Edge cases', () => {
+    test('should handle empty llmPayload', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: {},
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(result.current).toBeDefined();
+      expect(typeof result.current.getScoring).toBe('function');
+    });
+
+    test('should handle undefined eventDetails', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: undefined,
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(result.current).toBeDefined();
+    });
+
+    test('should handle missing user or organization data', () => {
+      const mockStore = createMockStore();
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      mockUseUserData.mockReturnValue(null);
+      mockUseActiveOrg.mockReturnValue(null);
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'story',
+        llmPayload: { test: 'payload' },
+        setLlmResponse: jest.fn(),
+        eventDetails: { event: 'test' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      expect(result.current).toBeDefined();
+    });
+  });
+
+  describe('Integration tests', () => {
+    test('should perform complete scoring flow', async () => {
+      const mockStore = createMockStore();
+      const mockSetLlmResponse = jest.fn();
+      const mockRun = jest.fn();
+      
+      const mockScoringData = {
+        status: 200,
+        body: {
+          Feature_Analysis: [
+            { feature_id: 'f1', score: 8.5 },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: mockScoringData,
+      });
+
+      const { result } = renderHook(() => useScoringApi({
+        artifactType: 'feature',
+        llmPayload: { features: ['f1'] },
+        setLlmResponse: mockSetLlmResponse,
+        eventDetails: { event: 'test_event' },
+      }), {
+        wrapper: ({ children }) => <TestWrapper store={mockStore}>{children}</TestWrapper>,
+      });
+
+      // Trigger scoring
+      await act(async () => {
+        result.current.getScoring();
+      });
+
+      // Verify API call was made
+      expect(mockRun).toHaveBeenCalled();
+      
+      // Verify response was processed
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 'f1',
+            score: 8.5,
+          }),
+        ])
+      );
+
+      // Verify logging
+      expect(mockLogEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'QE_Assist',
+          event: { event: 'test_event' },
+        }),
+        'INFO',
+        mockElfLogUrl
+      );
+    });
+  });
+});
