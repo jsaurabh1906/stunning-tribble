@@ -1,0 +1,652 @@
+import { renderHook, act, waitFor } from '@testing-library/react';
+import React from 'react';
+import useSuggestionApi from './useSuggestionApi';
+
+// Mock dependencies
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+// Mock modules
+const mockUseSelector = require('react-redux').useSelector;
+const mockUseFetchye = require('fetchye').useFetchye;
+
+// Simple test wrapper (no Redux Provider needed since we're mocking useSelector directly)
+const renderHookWithMocks = (hook) => {
+  return renderHook(hook);
+};
+
+describe('useSuggestionApi', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Default mock implementation
+    mockUseSelector.mockImplementation((selector) => {
+      const mockState = {
+        config: { qeAssistUrl: 'https://api.example.com' },
+      };
+      return selector(mockState);
+    });
+  });
+
+  describe('Initial State', () => {
+    it('should return initial state with loading false and empty data', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(result.current.isSuggestionLoading).toBe(false);
+      expect(result.current.getSuggestion).toBeInstanceOf(Function);
+      expect(result.current.suggestionData).toBeNull();
+    });
+
+    it('should handle missing qeAssistUrl in config', () => {
+      mockUseSelector.mockImplementation((selector) => {
+        const mockState = {
+          config: {},
+        };
+        return selector(mockState);
+      });
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(result.current.isSuggestionLoading).toBe(false);
+    });
+  });
+
+  describe('getSuggestion Function', () => {
+    it('should call API with correct parameters for story type', async () => {
+      const mockRun = jest.fn();
+      const mockSetLlmResponse = jest.fn();
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101 },
+        { feature_id: 2, user_story_id: 102 },
+      ];
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: null,
+      });
+
+      const { result } = renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      await act(async () => {
+        await result.current.getSuggestion();
+      });
+
+      expect(mockRun).toHaveBeenCalledWith();
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            user_story_id: 101,
+            suggestions: 'loading',
+          }),
+          expect.objectContaining({
+            feature_id: 2,
+            user_story_id: 102,
+            suggestions: 'loading',
+          }),
+        ])
+      );
+    });
+
+    it('should call API with correct parameters for feature type', async () => {
+      const mockRun = jest.fn();
+      const mockSetLlmResponse = jest.fn();
+      const mockLlmPayload = [
+        { feature_id: 1 },
+        { feature_id: 2 },
+      ];
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: null,
+      });
+
+      const { result } = renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'feature',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      await act(async () => {
+        await result.current.getSuggestion();
+      });
+
+      expect(mockRun).toHaveBeenCalledWith();
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            suggestions: 'loading',
+          }),
+          expect.objectContaining({
+            feature_id: 2,
+            suggestions: 'loading',
+          }),
+        ])
+      );
+    });
+
+    it('should handle empty llmPayload array', async () => {
+      const mockRun = jest.fn();
+      const mockSetLlmResponse = jest.fn();
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: null,
+      });
+
+      const { result } = renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [],
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      await act(async () => {
+        await result.current.getSuggestion();
+      });
+
+      expect(mockRun).toHaveBeenCalledWith();
+      expect(mockSetLlmResponse).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('API Response Handling', () => {
+    it('should handle successful API response with status 200 for story type', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: [
+            { feature_id: 1, user_story_id: 101, suggestion: 'Test suggestion 1' },
+            { feature_id: 2, user_story_id: 102, suggestion: 'Test suggestion 2' },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101 },
+        { feature_id: 2, user_story_id: 102 },
+      ];
+
+      renderHookWithMocks(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            user_story_id: 101,
+            suggestions: expect.objectContaining({
+              suggestion: 'Test suggestion 1',
+            }),
+          }),
+        ])
+      );
+    });
+
+    it('should handle successful API response with status 200 for feature type', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: [
+            { feature_id: 1, suggestion: 'Feature suggestion 1' },
+            { feature_id: 2, suggestion: 'Feature suggestion 2' },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1 },
+        { feature_id: 2 },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'feature',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            suggestions: expect.objectContaining({
+              suggestion: 'Feature suggestion 1',
+            }),
+          }),
+        ])
+      );
+    });
+
+    it('should handle API response with status between 400 and 600', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 500,
+        body: null,
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101 },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            user_story_id: 101,
+            suggestions: 'error',
+          }),
+        ])
+      );
+    });
+
+    it('should handle API response with no body data', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: null,
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101 },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      // Should not call setLlmResponse when body is null
+      expect(mockSetLlmResponse).not.toHaveBeenCalled();
+    });
+
+    it('should handle API response with empty data array', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: [],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101 },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('Loading States', () => {
+    it('should return loading state from useFetchye', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: true,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(result.current.isSuggestionLoading).toBe(true);
+    });
+
+    it('should return not loading when useFetchye is not loading', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: null,
+      });
+
+      const { result } = renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(result.current.isSuggestionLoading).toBe(false);
+    });
+  });
+
+  describe('Data Merging Logic', () => {
+    it('should merge suggestions with existing items correctly for story type', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: [
+            { feature_id: 1, user_story_id: 101, suggestion: 'New suggestion' },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, user_story_id: 101, existing_field: 'existing_value' },
+        { feature_id: 2, user_story_id: 102, existing_field: 'existing_value_2' },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            user_story_id: 101,
+            existing_field: 'existing_value',
+            suggestions: expect.objectContaining({
+              suggestion: 'New suggestion',
+            }),
+          }),
+          expect.objectContaining({
+            feature_id: 2,
+            user_story_id: 102,
+            existing_field: 'existing_value_2',
+          }),
+        ])
+      );
+    });
+
+    it('should merge suggestions with existing items correctly for feature type', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: [
+            { feature_id: 1, suggestion: 'Feature suggestion' },
+          ],
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      const mockLlmPayload = [
+        { feature_id: 1, existing_field: 'existing_value' },
+        { feature_id: 2, existing_field: 'existing_value_2' },
+      ];
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'feature',
+          llmPayload: mockLlmPayload,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(mockSetLlmResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            feature_id: 1,
+            existing_field: 'existing_value',
+            suggestions: expect.objectContaining({
+              suggestion: 'Feature suggestion',
+            }),
+          }),
+          expect.objectContaining({
+            feature_id: 2,
+            existing_field: 'existing_value_2',
+          }),
+        ])
+      );
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle undefined setLlmResponse gracefully', () => {
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: {
+          status: 200,
+          body: { data: [] },
+        },
+      });
+
+      expect(() => {
+        renderHookWithProvider(() =>
+          useSuggestionApi({
+            artifactType: 'story',
+            llmPayload: [],
+            setLlmResponse: undefined,
+          })
+        );
+      }).not.toThrow();
+    });
+
+    it('should handle malformed API response', () => {
+      const mockSetLlmResponse = jest.fn();
+      const mockApiResponse = {
+        status: 200,
+        body: {
+          data: 'invalid_data_format',
+        },
+      };
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: jest.fn(),
+        data: mockApiResponse,
+      });
+
+      expect(() => {
+        renderHookWithProvider(() =>
+          useSuggestionApi({
+            artifactType: 'story',
+            llmPayload: [],
+            setLlmResponse: mockSetLlmResponse,
+          })
+        );
+      }).not.toThrow();
+    });
+
+    it('should handle null llmPayload', () => {
+      const mockRun = jest.fn();
+      const mockSetLlmResponse = jest.fn();
+
+      mockUseFetchye.mockReturnValue({
+        isLoading: false,
+        run: mockRun,
+        data: null,
+      });
+
+      const { result } = renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: null,
+          setLlmResponse: mockSetLlmResponse,
+        })
+      );
+
+      expect(result.current.getSuggestion).toBeInstanceOf(Function);
+    });
+  });
+
+  describe('API URL Construction', () => {
+    it('should construct correct API URL for story type', () => {
+      const mockRun = jest.fn();
+      
+      mockUseFetchye.mockImplementation((url, options) => {
+        expect(url).toBe('https://api.example.com/api/suggest/story');
+        expect(options.method).toBe('POST');
+        expect(options.body).toContain('user_stories');
+        
+        return {
+          isLoading: false,
+          run: mockRun,
+          data: null,
+        };
+      });
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'story',
+          llmPayload: [{ feature_id: 1, user_story_id: 101 }],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        'https://api.example.com/api/suggest/story',
+        expect.objectContaining({
+          defer: true,
+          method: 'POST',
+          body: expect.stringContaining('user_stories'),
+        })
+      );
+    });
+
+    it('should construct correct API URL for feature type', () => {
+      const mockRun = jest.fn();
+      
+      mockUseFetchye.mockImplementation((url, options) => {
+        expect(url).toBe('https://api.example.com/api/suggest/features');
+        expect(options.method).toBe('POST');
+        expect(options.body).toContain('features');
+        
+        return {
+          isLoading: false,
+          run: mockRun,
+          data: null,
+        };
+      });
+
+      renderHookWithProvider(() =>
+        useSuggestionApi({
+          artifactType: 'feature',
+          llmPayload: [{ feature_id: 1 }],
+          setLlmResponse: jest.fn(),
+        })
+      );
+
+      expect(mockUseFetchye).toHaveBeenCalledWith(
+        'https://api.example.com/api/suggest/features',
+        expect.objectContaining({
+          defer: true,
+          method: 'POST',
+          body: expect.stringContaining('features'),
+        })
+      );
+    });
+  });
+});
