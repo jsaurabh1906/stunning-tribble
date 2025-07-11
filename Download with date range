@@ -1,0 +1,122 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import DownloadWithDateRange from '../DownloadWithDateRange';
+import * as reactRedux from 'react-redux';
+
+// Mock dependencies
+const mockSetShow = jest.fn();
+
+// Mock API URL selector
+const mockUseSelector = jest.spyOn(reactRedux, 'useSelector');
+mockUseSelector.mockImplementation(cb => cb({ getIn: () => 'http://mock-api-url' }));
+
+// Mock createObjectURL
+global.URL.createObjectURL = jest.fn(() => 'blob:url');
+
+describe('DownloadWithDateRange', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders modal when show is true', () => {
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    expect(screen.getByText('Select Date Range')).toBeInTheDocument();
+  });
+
+  it('does not render modal when show is false', () => {
+    const { container } = render(<DownloadWithDateRange show={false} setShow={mockSetShow} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('updates start date and end date fields', () => {
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    const startDateInput = screen.getByLabelText('Start Date:');
+    const endDateInput = screen.getByLabelText('End Date:');
+
+    fireEvent.change(startDateInput, { target: { value: '2024-01-01' } });
+    fireEvent.change(endDateInput, { target: { value: '2024-01-10' } });
+
+    expect(startDateInput.value).toBe('2024-01-01');
+    expect(endDateInput.value).toBe('2024-01-10');
+  });
+
+  it('shows error if start or end date not selected', async () => {
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    fireEvent.click(screen.getByText('Download'));
+    await waitFor(() => {
+      expect(screen.getByText('Please select both start and end dates.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows error if start date is after end date', async () => {
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    const startDateInput = screen.getByLabelText('Start Date:');
+    const endDateInput = screen.getByLabelText('End Date:');
+
+    fireEvent.change(startDateInput, { target: { value: '2024-01-10' } });
+    fireEvent.change(endDateInput, { target: { value: '2024-01-01' } });
+
+    fireEvent.click(screen.getByText('Download'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Start date cannot be after end date.')).toBeInTheDocument();
+    });
+  });
+
+  it('downloads file when valid dates provided and API succeeds', async () => {
+    // Mock fetch success
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ id: 1, name: 'test' }]),
+      })
+    );
+
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    const startDateInput = screen.getByLabelText('Start Date:');
+    const endDateInput = screen.getByLabelText('End Date:');
+
+    fireEvent.change(startDateInput, { target: { value: '2024-01-01' } });
+    fireEvent.change(endDateInput, { target: { value: '2024-01-10' } });
+
+    // Mock click behavior on <a>
+    const mockClick = jest.fn();
+    document.createElement = jest.fn().mockReturnValue({ click: mockClick, href: '', download: '', remove: jest.fn(), appendChild: jest.fn() });
+    document.body.appendChild = jest.fn();
+
+    fireEvent.click(screen.getByText('Download'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+      expect(mockSetShow).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('handles fetch failure gracefully', async () => {
+    // Mock fetch failure
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+      })
+    );
+
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    const startDateInput = screen.getByLabelText('Start Date:');
+    const endDateInput = screen.getByLabelText('End Date:');
+
+    fireEvent.change(startDateInput, { target: { value: '2024-01-01' } });
+    fireEvent.change(endDateInput, { target: { value: '2024-01-10' } });
+
+    fireEvent.click(screen.getByText('Download'));
+
+    await waitFor(() => {
+      expect(screen.getByText('An error occurred while downloading the report.')).toBeInTheDocument();
+    });
+  });
+
+  it('closes modal when Cancel is clicked', () => {
+    render(<DownloadWithDateRange show={true} setShow={mockSetShow} />);
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(mockSetShow).toHaveBeenCalledWith(false);
+  });
+});
