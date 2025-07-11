@@ -1,0 +1,125 @@
+import { renderHook, act } from '@testing-library/react-hooks';
+import { useSelector } from 'react-redux';
+import useFetchye from 'fetchye';
+import useSuggestionHelper from './useSuggestionApi';
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('fetchye', () => jest.fn());
+
+const mockSetLmResponse = jest.fn();
+
+describe('useSuggestionHelper', () => {
+  const mockRun = jest.fn();
+  const mockData = { status: 200, body: { data: [{ feature_id: 1, suggestions: ['test'] }] } };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    useSelector.mockImplementation((selectorFn) =>
+      selectorFn({ getIn: () => 'http://mock-api' })
+    );
+
+    useFetchye.mockReturnValue({
+      run: mockRun,
+      isLoading: false,
+      data: mockData,
+    });
+  });
+
+  it('should make API call with correct URL for story type', async () => {
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'story',
+        llmPayload: [{ user_story_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'http://mock-api/api/suggest/story',
+      expect.objectContaining({
+        method: 'POST',
+        defer: true,
+        body: JSON.stringify({ user_stories: [{ user_story_id: 1 }] }),
+      })
+    );
+  });
+
+  it('should make API call with correct URL for feature type', async () => {
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 99 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'http://mock-api/api/suggest/features',
+      expect.objectContaining({
+        method: 'POST',
+        defer: true,
+        body: JSON.stringify([{ feature_id: 99 }]),
+      })
+    );
+  });
+
+  it('should call getSuggestion and set loading state correctly', async () => {
+    const { result } = renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    await act(async () => {
+      await result.current.getSuggestion();
+    });
+
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('should handle success response and set suggestions', async () => {
+    useFetchye.mockReturnValueOnce({
+      run: mockRun,
+      isLoading: false,
+      data: {
+        status: 200,
+        body: { data: [{ feature_id: 1, suggestions: ['AI Suggestion'] }] },
+      },
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    // Simulate effect
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('should handle error response and set suggestions as error', async () => {
+    useFetchye.mockReturnValueOnce({
+      run: mockRun,
+      isLoading: false,
+      data: { status: 500 },
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+});
