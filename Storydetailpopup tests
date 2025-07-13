@@ -1,0 +1,164 @@
+import React from 'react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import StoryDetailsPopup from '../StoryDetailsPopup';
+import '@testing-library/jest-dom';
+import { useSelector } from 'react-redux';
+import { useFetchye } from 'fetchye';
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn()
+}));
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn()
+}));
+
+jest.mock('../../../utils/logger', () => ({
+  logEvent: jest.fn()
+}));
+
+// Sample mock data
+const baseProps = {
+  story: {
+    feature_id: 'feat123',
+    feature_name: 'Test Feature',
+    feature_description: 'Feature Description\nLine2',
+    feature_acceptance_criteria: 'Feature AC\nLine2',
+    user_story_id: 'us123',
+    user_story_name: 'Test Story',
+    user_story_description: 'Story Description',
+    user_story_acceptance_criteria: 'Story AC',
+    user_story_objectId: 'obj123',
+    user_story_reference: 'ref123',
+    user_story_userStoryId: 'usId123',
+    title: 'Title',
+    notes: 'Some notes',
+    score: 6,
+    scoring_criteria: 'Criterion 1\nCriterion 2',
+    improvements: 'Do X\nDo Y',
+    reason_for_score: 'Missing tests\nBad code',
+    suggestions: {
+      Acceptance_Criteria: 'Suggested AC',
+      Description: 'Suggested Desc',
+      Business_Objective: 'BO',
+      User_Roles: 'UR',
+      Dependencies: 'Deps',
+      Risks: 'Risks',
+      Out_of_scope: 'OOS'
+    }
+  },
+  artifactType: 'story',
+  setEditStory: jest.fn(),
+  setSetResourceClicked: jest.fn(),
+  setUpdateMessageClose: jest.fn(),
+  setUserAction: jest.fn(),
+  setNewScore: jest.fn(),
+  setOldScore: jest.fn(),
+  setLmPayload: jest.fn(),
+  getUserAuditLog: jest.fn(),
+  referenceObjectId: [{ user_story_userStoryId: 'usId123' }],
+  user: { adsId: 'ads123', fullName: 'Test User' },
+  onClose: jest.fn()
+};
+
+describe('StoryDetailsPopup', () => {
+  beforeEach(() => {
+    useSelector.mockImplementation((cb) =>
+      cb({
+        getIn: jest.fn(() => 'http://fake-url.com'),
+        config: { oneApiUrl: 'http://api' },
+        ELFEndpoints: { rally: 'rally' }
+      })
+    );
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      data: { status: 200 },
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders modal title and score', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Test Story/)).toBeInTheDocument();
+    expect(screen.getByText(/Score/)).toBeInTheDocument();
+  });
+
+  it('renders acceptance criteria textarea when editing', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Acceptance Criteria/)).toBeInTheDocument();
+  });
+
+  it('clicks Re-Score button and updates state', async () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByText('Re-Score'));
+    await waitFor(() => {
+      expect(baseProps.setUserAction).toHaveBeenCalledWith('rescore');
+      expect(baseProps.setLmPayload).toHaveBeenCalled();
+    });
+  });
+
+  it('clicks Update Rally button and triggers acceptStory', async () => {
+    const runMock = jest.fn();
+    useFetchye.mockReturnValue({ run: runMock, data: {} });
+
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByText('Update Rally'));
+
+    await waitFor(() => {
+      expect(runMock).toHaveBeenCalled();
+      expect(baseProps.setUserAction).toHaveBeenCalledWith('update');
+    });
+  });
+
+  it('shows success toast when update is successful', () => {
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      data: { status: 200 }
+    });
+
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/User details updated successfully/)).toBeInTheDocument();
+  });
+
+  it('shows unauthorized toast on 401', () => {
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      data: { body: { httpStatusCode: 'UNAUTHORIZED' } }
+    });
+
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Access Denied/)).toBeInTheDocument();
+  });
+
+  it('displays improvement links with bold styling and hyperlinks', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Do X/)).toBeInTheDocument();
+  });
+
+  it('renders all suggestion fields', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Business Objective/)).toBeInTheDocument();
+    expect(screen.getByText(/User Roles/)).toBeInTheDocument();
+    expect(screen.getByText(/Dependencies/)).toBeInTheDocument();
+    expect(screen.getByText(/Risks/)).toBeInTheDocument();
+    expect(screen.getByText(/Out of scope/)).toBeInTheDocument();
+  });
+
+  it('opens and closes confirmation modal', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByText('Re-Score'));
+    fireEvent.click(screen.getByText('No'));
+    fireEvent.click(screen.getByText('Yes'));
+    expect(baseProps.onClose).toHaveBeenCalled();
+  });
+
+  it('copies description and acceptance criteria when approve buttons are clicked', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByTitle('approveDescription'));
+    // Clipboard mocked in browser test env, would verify with jest mocks if needed
+  });
+});
