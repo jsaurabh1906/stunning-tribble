@@ -1,0 +1,64 @@
+it('should call logEvent when scoring data is received', async () => {
+  const setLmResponse = jest.fn();
+  const mockRun = jest.fn();
+
+  // Mock all required selectors
+  useSelector
+    .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+    .mockReturnValueOnce({}) // ELFEndpoints
+    .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+    .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+  // Mock useFetchye to return data immediately
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    data: {
+      status: 200,
+      body: {
+        user_story_analysis: {
+          Feature_Analysis: [
+            { user_story_id: 'us1', score: 0.5 },
+            { user_story_id: 'us2', score: 0.9 },
+          ]
+        }
+      }
+    },
+    run: mockRun,
+  });
+
+  // Add additional mocks for the second render cycle
+  useSelector
+    .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+    .mockReturnValueOnce({}) // ELFEndpoints
+    .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+    .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+  renderHook(() => useScoringApi({
+    artifactType: 'story',
+    llmPayload: [
+      { user_story_id: 'us1' },
+      { user_story_id: 'us2' },
+    ],
+    setLmResponse,
+    eventDetails: 'scoring_event',
+  }));
+
+  // Wait for logEvent to be called
+  await waitFor(() => {
+    expect(logEvent).toHaveBeenCalledTimes(1);
+  });
+
+  // Verify the call parameters
+  const [eventPayload, logLevel] = logEvent.mock.calls[0];
+
+  expect(eventPayload).toMatchObject({
+    message: 'QE_Assist',
+    event: 'scoring_event',
+    storyId: ['us1', 'us2'],
+    score: [0.5, 0.9],
+    userId: 'user123',
+    organization: 'ORG001',
+  });
+
+  expect(logLevel).toBe('INFO');
+});
