@@ -144,3 +144,46 @@ it('should call logEvent when scoring data is received', async () => {
 
   expect(logLevel).toBe('INFO');
 });
+=================
+it('sets loading score state in getScoring when requestedIds match', async () => {
+  const setLmResponse = jest.fn();
+
+  // Match between payload and scoringData
+  const payload = [
+    { user_story_id: 'us1' },
+    { user_story_id: 'us2' },
+  ];
+
+  useSelector
+    .mockReturnValueOnce('http://mock-api') // qeAssistLlmUrl
+    .mockReturnValueOnce({})                // ELFEndpoints
+    .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+    .mockReturnValueOnce({ adSid: 'user123' }); // user
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    data: null,
+    run: jest.fn(),
+  });
+
+  const { result } = renderHook(() =>
+    useScoringApi({
+      artifactType: 'story',
+      llmPayload: payload,
+      setLmResponse,
+      eventDetails: {},
+    })
+  );
+
+  // manually call getScoring
+  await act(async () => {
+    await result.current.getScoring();
+  });
+
+  expect(setLmResponse).toHaveBeenCalledWith(
+    expect.arrayContaining([
+      expect.objectContaining({ user_story_id: 'us1', score: 'loading' }),
+      expect.objectContaining({ user_story_id: 'us2', score: 'loading' }),
+    ])
+  );
+});
