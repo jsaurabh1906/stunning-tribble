@@ -123,3 +123,188 @@ describe('useSuggestionHelper', () => {
     expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
   });
 });
+============
+
+import { renderHook, act } from '@testing-library/react-hooks';
+import { useSelector } from 'react-redux';
+import useFetchye from 'fetchye';
+import useSuggestionHelper from '../useSuggestionApi'; // Adjust path as needed
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('fetchye', () => jest.fn());
+
+describe('useSuggestionHelper', () => {
+  let mockSetLmResponse;
+
+  beforeEach(() => {
+    mockSetLmResponse = jest.fn();
+
+    useSelector.mockImplementation((selector) =>
+      selector({
+        getIn: () => 'https://mock-qeassist.com',
+      })
+    );
+  });
+
+  it('should make correct API call for story artifactType', async () => {
+    const runMock = jest.fn();
+    const mockData = {
+      status: 200,
+      body: {
+        data: [{ user_story_id: 1, suggestions: ['story-suggestion'] }],
+      },
+    };
+
+    useFetchye.mockReturnValue({
+      run: runMock,
+      isLoading: false,
+      data: mockData,
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'story',
+        llmPayload: [{ user_story_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'https://mock-qeassist.com/api/suggest/story',
+      expect.objectContaining({
+        defer: true,
+        method: 'POST',
+        body: JSON.stringify({ user_stories: [{ user_story_id: 1 }] }),
+      })
+    );
+  });
+
+  it('should make correct API call for feature artifactType', () => {
+    const runMock = jest.fn();
+
+    useFetchye.mockReturnValue({
+      run: runMock,
+      isLoading: false,
+      data: {},
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 99 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'https://mock-qeassist.com/api/suggest/features',
+      expect.objectContaining({
+        defer: true,
+        method: 'POST',
+        body: JSON.stringify([{ feature_id: 99 }]),
+      })
+    );
+  });
+
+  it('should set loading state on getSuggestion call', async () => {
+    const runMock = jest.fn();
+
+    useFetchye.mockReturnValue({
+      run: runMock,
+      isLoading: false,
+      data: {},
+    });
+
+    const { result } = renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    await act(async () => {
+      await result.current.getSuggestion();
+    });
+
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('should update setLmResponse with suggestions if status is 200', () => {
+    const mockData = {
+      status: 200,
+      body: {
+        data: [{ feature_id: 1, suggestions: ['AI Suggestion'] }],
+      },
+    };
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      isLoading: false,
+      data: mockData,
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('should show error state when API returns 4xx or 5xx', () => {
+    const mockError = {
+      status: 500,
+      body: {},
+    };
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      isLoading: false,
+      data: mockError,
+    });
+
+    renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(mockSetLmResponse).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('should return isLoading and suggestionData properly', () => {
+    const mockData = {
+      status: 200,
+      body: {
+        data: [{ feature_id: 1, suggestions: ['example'] }],
+      },
+    };
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      isLoading: true,
+      data: mockData,
+    });
+
+    const { result } = renderHook(() =>
+      useSuggestionHelper({
+        artifactType: 'feature',
+        llmPayload: [{ feature_id: 1 }],
+        setLmResponse: mockSetLmResponse,
+      })
+    );
+
+    expect(result.current.isSuggestionLoading).toBe(true);
+    expect(result.current.suggestionData).toEqual(mockData);
+  });
+});
+
