@@ -229,3 +229,79 @@ describe('useScoringApi', () => {
     });
   });
 });
+=============================================
+import { renderHook, waitFor } from '@testing-library/react';
+import { useSelector } from 'react-redux';
+import { useFetchye } from 'fetchye';
+import useScoringApi from '../path/to/useScoringApi'; // ✅ Adjust to your actual file
+import logEvent from '../../../util/logger'; // ✅ Adjust if path is different
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+jest.mock('../../../util/logger', () => jest.fn());
+
+describe('useScoringApi - logEvent trigger', () => {
+  it('should call logEvent when scoring data is received', async () => {
+    const setLmResponse = jest.fn();
+
+    // 🔧 Mock useSelector calls (in correct order)
+    useSelector
+      .mockReturnValueOnce('http://mock-api')               // qeAssistLlmUrl
+      .mockReturnValueOnce({})                              // ELFEndpoints
+      .mockReturnValueOnce({ code: 'ORG001' })              // activeOrg
+      .mockReturnValueOnce({ adSid: 'user123' });           // user
+
+    // 🔧 Mock useFetchye return (must match hook expectations)
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: {
+        status: 200,
+        body: {
+          user_story_analysis: [
+            { user_story_id: 'us1', score: 0.5 },
+            { user_story_id: 'us2', score: 0.9 },
+          ],
+        },
+      },
+      run: jest.fn(),
+    });
+
+    // 🔥 Render hook
+    renderHook(() =>
+      useScoringApi({
+        artifactType: 'story',
+        llmPayload: [
+          { user_story_id: 'us1' },
+          { user_story_id: 'us2' },
+        ],
+        setLmResponse,
+        eventDetails: 'scoring_event',
+      })
+    );
+
+    // 🔎 Wait for the logEvent to be called
+    await waitFor(() => {
+      expect(logEvent).toHaveBeenCalled();
+    });
+
+    // ✅ Inspect the actual call
+    const [eventPayload, logLevel, logUrl] = logEvent.mock.calls[0];
+
+    expect(eventPayload).toMatchObject({
+      message: 'QE_Assist',
+      event: 'scoring_event',
+      storyId: ['us1', 'us2'],
+      score: [0.5, 0.9],
+      userId: 'user123',
+      organization: 'ORG001',
+    });
+
+    expect(logLevel).toBe('INFO');
+  });
+});
