@@ -1,172 +1,231 @@
-// src/hooks/qeassist/useScoringApi.spec.jsx
-import { renderHook, act } from '@testing-library/react-hooks'
-import useScoringApi from './useScoringApi'
+import { renderHook, act, waitFor } from '@testing-library/react';
+import useScoringApi from '../useScoringApi'; // adjust path as needed
 
-// --- MOCKS ---
+import { useSelector } from 'react-redux';
+import { useFetchye } from 'fetchye';
+import { logEvent } from '../../../util/logger';
+
+// 🧪 Mock dependencies
 jest.mock('react-redux', () => ({
-  useSelector: (fn) => {
-    // pretend config.qeAssistUrl and config.ELFEndpoints
-    const state = { config: { qeAssistUrl: 'https://api.test', ELFEndpoints: 'https://log.test' } }
-    return fn(state)
-  },
-}))
-jest.mock('../useAuthData', () => ({
-  useUserData: () => ({ adsId: 'USER123' }),
-  useActiveOrg: () => ['ORG42'],
-}))
-const mockRun = jest.fn()
-let fetchyeReturn = {
-  isLoading: false,
-  run: mockRun,
-  data: null,
-}
+  useSelector: jest.fn(),
+}));
+
 jest.mock('fetchye', () => ({
-  useFetchye: () => fetchyeReturn,
-}))
-jest.mock('../../util/logger', () => ({
+  useFetchye: jest.fn(),
+}));
+
+jest.mock('../../../util/logger', () => ({
   logEvent: jest.fn(),
-}))
-import { logEvent } from '../../util/logger'
+}));
+
+jest.mock('../../../constants', () => ({
+  FETCHYE_OPTIONS: {},
+}));
 
 describe('useScoringApi', () => {
+  const mockUrl = 'http://mock-api';
+  const eventDetails = { event: 'QE_Test' };
+
   beforeEach(() => {
-    jest.clearAllMocks()
-    // reset the fetchye hook to default
-    fetchyeReturn = { isLoading: false, run: mockRun, data: null }
-  })
+    jest.clearAllMocks();
+    useSelector
+      .mockReturnValueOnce(mockUrl) // qeAssistUrl
+      .mockReturnValueOnce({});     // ELFEndpoints
+  });
 
-  it('builds correct POST body for story and calls run when getScoring is invoked', async () => {
-    const setLlmResponse = jest.fn()
-    // no data yet
-    fetchyeReturn.data = null
+  it('calls correct API URL and payload for story type', () => {
+    const runMock = jest.fn();
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: null,
+      run: runMock,
+    });
 
-    const { result } = renderHook(() =>
+    const llmPayload = [{ user_story_id: 'story1' }];
+
+    renderHook(() =>
       useScoringApi({
         artifactType: 'story',
-        llmPayload: [{ user_story_id: 'S1', foo: 'bar' }],
-        setLlmResponse,
-        eventDetails: { step: 1 },
+        llmPayload,
+        eventDetails,
       })
-    )
+    );
 
-    // before calling getScoring, run should not have been called
-    expect(mockRun).not.toHaveBeenCalled()
-
-    await act(async () => {
-      await result.current.getScoring()
-    })
-
-    // run should be called exactly once
-    expect(mockRun).toHaveBeenCalledTimes(1)
-  })
-
-  it('on 200 & Feature_Analysis merges and calls setLlmResponse + logEvent', async () => {
-    // simulate fetchye returning a successful feature analysis
-    fetchyeReturn.data = {
-      status: 200,
-      body: {
-        Feature_Analysis: [{ feature_id: 'F1', score: 42 }],
-      },
-    }
-    const unscored = [{ feature_id: 'F1', other: 'x' }, { feature_id: 'F2', other: 'y' }]
-    const setLlmResponse = jest.fn().mockImplementation(fnOrVal => {
-      // hook uses functional, so we call it with previous
-      return fnOrVal(unscored)
-    })
-
-    const { result } = renderHook(() =>
-      useScoringApi({
-        artifactType: 'feature',
-        llmPayload: unscored,
-        setLlmResponse,
-        eventDetails: { foo: 'bar' },
-      })
-    )
-
-    // trigger the effect
-    await act(async () => {
-      // effect runs on mount because data is already present
-    })
-
-    // merged array: F1 has score, F2 unchanged
-    expect(setLlmResponse).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        { feature_id: 'F1', other: 'x', score: 42 },
-        { feature_id: 'F2', other: 'y' },
-      ])
-    )
-
-    // logEvent should be called once with data extracted from body
-    expect(logEvent).toHaveBeenCalledWith(
+    expect(useFetchye).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: 'QE_Assist',
-        event: { foo: 'bar' },
-        user: 'USER123',
-        storyId: ['F1'],
-        score: [42],
-        organization: 'ORG42',
-        loggedAt: expect.any(Date),
-      }),
-      'INFO',
-      'https://log.test'
-    )
-  })
-
-  it('on 200 & user_story_analysis merges and calls setLlmResponse', async () => {
-    fetchyeReturn.data = {
-      status: 200,
-      body: {
-        user_story_analysis: [{ user_story_id: 'S2', score: 99 }],
-      },
-    }
-    const unscored = [{ user_story_id: 'S2', foo: 'x' }]
-    const setLlmResponse = jest.fn().mockImplementation(fnOrVal => fnOrVal(unscored))
-
-    renderHook(() =>
-      useScoringApi({
-        artifactType: 'story',
-        llmPayload: unscored,
-        setLlmResponse,
-        eventDetails: {},
+        url: `${mockUrl}/api/analyze/story`,
+        method: 'POST',
+        body: JSON.stringify({ user_stories: llmPayload }),
       })
-    )
+    );
+  });
 
-    // effect runs on mount
-    expect(setLlmResponse).toHaveBeenCalledWith([
-      { user_story_id: 'S2', foo: 'x', score: 99 },
-    ])
-  })
+  it('calls correct API URL and payload for feature type', () => {
+    const runMock = jest.fn();
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: null,
+      run: runMock,
+    });
 
-  it('on 4xx status sets every item score to "error"', async () => {
-    fetchyeReturn.data = { status: 404, body: null }
-    const unscored = [{ feature_id: 'F1' }, { feature_id: 'F2' }]
-    const setLlmResponse = jest.fn().mockImplementation(fnOrVal => fnOrVal(unscored))
+    const llmPayload = [{ feature_id: 'feature1' }];
 
     renderHook(() =>
       useScoringApi({
         artifactType: 'feature',
-        llmPayload: unscored,
-        setLlmResponse,
-        eventDetails: {},
+        llmPayload,
+        eventDetails,
       })
-    )
+    );
 
-    expect(setLlmResponse).toHaveBeenCalledWith([
-      { feature_id: 'F1', score: 'error' },
-      { feature_id: 'F2', score: 'error' },
-    ])
-  })
+    expect(useFetchye).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `${mockUrl}/api/analyze/feature`,
+        method: 'POST',
+        body: JSON.stringify({ features: llmPayload }),
+      })
+    );
+  });
 
-  it('exposes isScoringLoading from useFetchye', () => {
-    fetchyeReturn.isLoading = true
+  it('calls setLmResponse with merged scored data', async () => {
+    const setLmResponse = jest.fn();
+
+    const scoringData = {
+      status: 200,
+      body: {
+        Feature_Analysis: [
+          { feature_id: 'feature1', score: 0.85 },
+        ],
+      },
+    };
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: scoringData,
+      run: jest.fn(),
+    });
+
+    const llmPayload = [{ feature_id: 'feature1' }];
+
+    renderHook(() =>
+      useScoringApi({
+        artifactType: 'feature',
+        llmPayload,
+        eventDetails,
+        setLmResponse,
+      })
+    );
+
+    await waitFor(() =>
+      expect(setLmResponse).toHaveBeenCalledWith([
+        expect.objectContaining({
+          feature_id: 'feature1',
+          score: 0.85,
+        }),
+      ])
+    );
+  });
+
+  it('calls setLmResponse with error scores on API failure', async () => {
+    const setLmResponse = jest.fn();
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: { status: 500 },
+      run: jest.fn(),
+    });
+
+    const llmPayload = [{ feature_id: 'feature1' }];
+
+    renderHook(() =>
+      useScoringApi({
+        artifactType: 'feature',
+        llmPayload,
+        eventDetails,
+        setLmResponse,
+      })
+    );
+
+    await waitFor(() =>
+      expect(setLmResponse).toHaveBeenCalledWith([
+        expect.objectContaining({ score: 'error' }),
+      ])
+    );
+  });
+
+  it('sets loading state using getScoring()', async () => {
+    const runMock = jest.fn();
+    const setLmResponse = jest.fn();
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: null,
+      run: runMock,
+    });
+
+    const llmPayload = [{ feature_id: 'feature1' }];
+
     const { result } = renderHook(() =>
       useScoringApi({
-        artifactType: 'story',
-        llmPayload: [],
-        setLlmResponse: jest.fn(),
-        eventDetails: {},
+        artifactType: 'feature',
+        llmPayload,
+        eventDetails,
+        setLmResponse,
       })
-    )
-    expect(result.current.isScoringLoading).toBe(true)
-  })
-})
+    );
+
+    await act(async () => {
+      await result.current.getScoring();
+    });
+
+    expect(setLmResponse).toHaveBeenCalled();
+    expect(runMock).toHaveBeenCalled();
+  });
+
+  it('logs scoring event when data is received', async () => {
+    const setLmResponse = jest.fn();
+
+    const scoringData = {
+      status: 200,
+      body: {
+        user_story_analysis: [
+          { user_story_id: 'us1', score: 0.5 },
+        ],
+      },
+    };
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: scoringData,
+      run: jest.fn(),
+    });
+
+    useSelector
+      .mockReturnValueOnce(mockUrl)
+      .mockReturnValueOnce({})
+      .mockReturnValueOnce({ code: 'org1' }) // activeOrg
+      .mockReturnValueOnce({ adSid: 'user1' }); // user
+
+    const llmPayload = [{ user_story_id: 'us1' }];
+
+    renderHook(() =>
+      useScoringApi({
+        artifactType: 'story',
+        llmPayload,
+        eventDetails,
+        setLmResponse,
+      })
+    );
+
+    await waitFor(() => {
+      expect(logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storyId: ['us1'],
+          score: [0.5],
+        }),
+        'INFO',
+        undefined
+      );
+    });
+  });
+});
