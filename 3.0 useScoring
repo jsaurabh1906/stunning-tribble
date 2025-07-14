@@ -62,3 +62,85 @@ it('should call logEvent when scoring data is received', async () => {
 
   expect(logLevel).toBe('INFO');
 });
+
+=============
+it('should call logEvent when scoring data is received', async () => {
+  const setLmResponse = jest.fn();
+  const mockRun = jest.fn();
+
+  // Mock all selectors consistently
+  const mockQeAssistUrl = 'http://mock-api';
+  const mockElfEndpoints = {};
+  const mockActiveOrg = { code: 'ORG001' };
+  const mockUser = { adsId: 'user123' };
+
+  useSelector.mockImplementation((selector) => {
+    // Mock the selectors based on the selector function
+    if (selector.toString().includes('qeAssistLmUrl') || selector.toString().includes('config')) {
+      return mockQeAssistUrl;
+    }
+    if (selector.toString().includes('ELFEndpoints')) {
+      return mockElfEndpoints;
+    }
+    if (selector.toString().includes('activeOrg')) {
+      return mockActiveOrg;
+    }
+    if (selector.toString().includes('user')) {
+      return mockUser;
+    }
+    return undefined;
+  });
+
+  // Mock successful API response
+  const mockScoringData = {
+    status: 200,
+    body: {
+      user_story_analysis: {
+        Feature_Analysis: [
+          { user_story_id: 'us1', score: 0.5 },
+          { user_story_id: 'us2', score: 0.9 },
+        ]
+      }
+    }
+  };
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    data: mockScoringData,
+    run: mockRun,
+  });
+
+  let hookResult;
+  
+  await act(async () => {
+    hookResult = renderHook(() => useScoringApi({
+      artifactType: 'story',
+      llmPayload: [
+        { user_story_id: 'us1' },
+        { user_story_id: 'us2' },
+      ],
+      setLmResponse,
+      eventDetails: 'scoring_event',
+    }));
+  });
+
+  // Give the effect time to run
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
+
+  expect(logEvent).toHaveBeenCalledTimes(1);
+
+  const [eventPayload, logLevel] = logEvent.mock.calls[0];
+
+  expect(eventPayload).toMatchObject({
+    message: 'QE_Assist',
+    event: 'scoring_event',
+    storyId: ['us1', 'us2'],
+    score: [0.5, 0.9],
+    userId: 'user123',
+    organization: 'ORG001',
+  });
+
+  expect(logLevel).toBe('INFO');
+});
