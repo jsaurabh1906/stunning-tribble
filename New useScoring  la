@@ -1,0 +1,204 @@
+import { renderHook, act } from '@testing-library/react-hooks';
+import { useSelector } from 'react-redux';
+import { useFetchye } from './fetchye';
+import { waitFor } from '@testing-library/react';
+import useScoringApi from '../../../../../../src/hooks/qeassist/useScoringApi';
+import { logEvent } from '../../../../../../src/util/logger';
+
+// Mock dependencies
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+jest.mock('../../../../../../src/util/logger', () => ({
+  logEvent: jest.fn(),
+}));
+
+jest.mock('../../../../../../src/constants', () => ({
+  FETCHYE_OPTIONS: {},
+}));
+
+describe('useScoringApi', () => {
+  const mockUrl = 'http://mock-api';
+  const eventDetails = { event: 'QE_Test' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useSelector
+      .mockReturnValueOnce(mockUrl) // qeAssistLmUrl
+      .mockReturnValueOnce({}); // ELFEndpoints
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should call logEvent when scoring data is received', async () => {
+    const setLmResponse = jest.fn();
+
+    useSelector
+      .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+      .mockReturnValueOnce({}) // ELFEndpoints
+      .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+      .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+    // Mock useFetchye to return the correct response structure
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: {
+        status: 200,
+        body: {
+          user_story_analysis: {
+            Feature_Analysis: [
+              { user_story_id: 'us1', score: 0.5 },
+              { user_story_id: 'us2', score: 0.9 },
+            ]
+          }
+        }
+      },
+      run: jest.fn(),
+    });
+
+    renderHook(() => useScoringApi({
+      artifactType: 'story',
+      llmPayload: [
+        { user_story_id: 'us1' },
+        { user_story_id: 'us2' },
+      ],
+      setLmResponse,
+      eventDetails: 'scoring_event',
+    }));
+
+    await waitFor(() => {
+      console.log('in Await logEvent:', logEvent);
+      expect(logEvent).toHaveBeenCalled();
+    });
+
+    // Inspect the actual call
+    const [eventPayload, logLevel] = logEvent.mock.calls[0];
+
+    expect(eventPayload).toMatchObject({
+      message: 'QE_Assist',
+      event: 'scoring_event',
+      storyId: ['us1', 'us2'],
+      score: [0.5, 0.9],
+      userId: 'user123',
+      organization: 'ORG001',
+    });
+
+    expect(logLevel).toBe('INFO');
+  });
+
+  it('calls correct API URL and payload for story type', () => {
+    const setLmResponse = jest.fn();
+
+    useSelector
+      .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+      .mockReturnValueOnce({}) // ELFEndpoints
+      .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+      .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: {
+        status: 200,
+        body: {
+          user_story_analysis: {
+            Feature_Analysis: [
+              { user_story_id: 'us1', score: 0.5 },
+            ]
+          }
+        }
+      },
+      run: jest.fn(),
+    });
+
+    renderHook(() => useScoringApi({
+      artifactType: 'story',
+      llmPayload: [{ user_story_id: 'us1' }],
+      setLmResponse,
+      eventDetails: 'scoring_event',
+    }));
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'http://mock-api/api/analyze/story',
+      {
+        defer: true,
+        method: 'POST',
+        ...expect.objectContaining({
+          body: expect.stringContaining('"user_stories"')
+        })
+      }
+    );
+  });
+
+  it('handles feature type correctly', () => {
+    const setLmResponse = jest.fn();
+
+    useSelector
+      .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+      .mockReturnValueOnce({}) // ELFEndpoints
+      .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+      .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: {
+        status: 200,
+        body: {
+          Feature_Analysis: [
+            { feature_id: 'f1', score: 0.8 },
+          ]
+        }
+      },
+      run: jest.fn(),
+    });
+
+    renderHook(() => useScoringApi({
+      artifactType: 'feature',
+      llmPayload: [{ feature_id: 'f1' }],
+      setLmResponse,
+      eventDetails: 'scoring_event',
+    }));
+
+    expect(useFetchye).toHaveBeenCalledWith(
+      'http://mock-api/api/analyze/feature',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+  });
+
+  it('handles error responses correctly', () => {
+    const setLmResponse = jest.fn();
+
+    useSelector
+      .mockReturnValueOnce('http://mock-api') // qeAssistLmUrl
+      .mockReturnValueOnce({}) // ELFEndpoints
+      .mockReturnValueOnce({ code: 'ORG001' }) // activeOrg
+      .mockReturnValueOnce({ adsId: 'user123' }); // user
+
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      data: {
+        status: 500,
+        body: null
+      },
+      run: jest.fn(),
+    });
+
+    renderHook(() => useScoringApi({
+      artifactType: 'story',
+      llmPayload: [{ user_story_id: 'us1' }],
+      setLmResponse,
+      eventDetails: 'scoring_event',
+    }));
+
+    // Should not call logEvent for error responses
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+});
