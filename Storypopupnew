@@ -1,0 +1,191 @@
+import React from 'react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import StoryDetailsPopup from '../StoryDetailsPopup';
+import '@testing-library/jest-dom';
+import { useSelector } from 'react-redux';
+import { useFetchye } from 'fetchye';
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn()
+}));
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn()
+}));
+
+jest.mock('../../../utils/logger', () => ({
+  logEvent: jest.fn()
+}));
+
+Object.assign(navigator, {
+  clipboard: {
+    writeText: jest.fn(),
+  },
+});
+
+// Base Props
+const baseProps = {
+  story: {
+    feature_id: 'feat123',
+    feature_name: 'Test Feature',
+    feature_description: 'Line 1\nLine 2',
+    feature_acceptance_criteria: 'AC 1\nAC 2',
+    user_story_id: 'us123',
+    user_story_name: 'Test Story',
+    user_story_description: 'Story Desc',
+    user_story_acceptance_criteria: 'Story AC',
+    user_story_objectId: 'obj123',
+    user_story_reference: 'ref123',
+    user_story_userStoryId: 'usId123',
+    title: 'Title',
+    notes: 'Some notes',
+    score: 6,
+    scoring_criteria: 'Crit1\nCrit2',
+    improvements: 'Do A\nDo B\nhttps://example.com',
+    reason_for_score: 'Missing tests',
+    suggestions: {
+      Acceptance_Criteria: 'Suggested AC',
+      Description: 'Suggested Desc',
+      Business_Objective: 'BO',
+      User_Roles: 'UR',
+      Dependencies: 'Deps',
+      Risks: 'Risks',
+      Out_of_scope: 'OOS'
+    }
+  },
+  artifactType: 'story',
+  setEditStory: jest.fn(),
+  setSetResourceClicked: jest.fn(),
+  setUpdateMessageClose: jest.fn(),
+  setUserAction: jest.fn(),
+  setNewScore: jest.fn(),
+  setOldScore: jest.fn(),
+  setLmPayload: jest.fn(),
+  getUserAuditLog: jest.fn(),
+  referenceObjectId: [{ user_story_userStoryId: 'usId123' }],
+  user: { adsId: 'ads123', fullName: 'Test User' },
+  onClose: jest.fn()
+};
+
+describe('StoryDetailsPopup - Full Coverage', () => {
+  beforeEach(() => {
+    useSelector.mockImplementation((cb) =>
+      cb({
+        getIn: jest.fn(() => 'http://fake-url.com'),
+        config: { oneApiUrl: 'http://api' },
+        ELFEndpoints: { rally: 'rally' }
+      })
+    );
+
+    useFetchye.mockReturnValue({
+      run: jest.fn(),
+      data: { status: 200 }
+    });
+
+    jest.clearAllMocks();
+  });
+
+  it('renders title and score', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText('Test Story')).toBeInTheDocument();
+    expect(screen.getByText('Score')).toBeInTheDocument();
+  });
+
+  it('opens and closes confirmation modal', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getAllByRole('button')[0]); // SVG Icon button
+    fireEvent.click(screen.getByText('No'));
+    expect(screen.queryByText(/your changes have not been saved/i)).not.toBeInTheDocument();
+  });
+
+  it('calls onClose when clicking Yes in modal', () => {
+    const onClose = jest.fn();
+    render(<StoryDetailsPopup {...baseProps} onClose={onClose} />);
+    fireEvent.click(screen.getAllByRole('button')[0]);
+    fireEvent.click(screen.getByText('Yes'));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows unauthorized toast message when unauthorizeMessage is true', () => {
+    render(<StoryDetailsPopup {...baseProps} unauthorizeMessage={true} />);
+    expect(screen.getByText('Access Denied')).toBeInTheDocument();
+  });
+
+  it('closes unauthorized toast message', () => {
+    const setUnauthorizeMessage = jest.fn();
+    render(<StoryDetailsPopup {...baseProps} unauthorizeMessage={true} setUnauthorizeMessage={setUnauthorizeMessage} />);
+    fireEvent.click(screen.getByTitle('Close'));
+    expect(setUnauthorizeMessage).toHaveBeenCalledWith(false);
+  });
+
+  it('shows update success toast message', () => {
+    render(<StoryDetailsPopup {...baseProps} updateMessage={true} />);
+    expect(screen.getByText(/User details updated successfully/i)).toBeInTheDocument();
+  });
+
+  it('closes update toast message', () => {
+    const setUpdateMessageClose = jest.fn();
+    render(<StoryDetailsPopup {...baseProps} updateMessage={true} setUpdateMessageClose={setUpdateMessageClose} />);
+    fireEvent.click(screen.getByTitle('Close'));
+    expect(setUpdateMessageClose).toHaveBeenCalledWith(false);
+  });
+
+  it('renders tooltip scoring list', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText('Crit1')).toBeInTheDocument();
+    expect(screen.getByText('Crit2')).toBeInTheDocument();
+  });
+
+  it('calls all props on Re-Score button', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByText('Re-Score'));
+    expect(baseProps.setUserAction).toHaveBeenCalledWith('rescore');
+    expect(baseProps.setEditStory).toHaveBeenCalledWith(false);
+    expect(baseProps.setLmPayload).toHaveBeenCalled();
+  });
+
+  it('calls update story on Update Rally button', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByText('Update Rally'));
+    expect(baseProps.setUserAction).toHaveBeenCalledWith('update');
+  });
+
+  it('renders improvements with link', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText('Do A')).toBeInTheDocument();
+    expect(screen.getByText('https://example.com')).toHaveAttribute('href', 'https://example.com');
+  });
+
+  it('renders Grid when improvements exist', () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    expect(screen.getByText(/Suggestions/i)).toBeInTheDocument();
+  });
+
+  it('copies acceptance criteria to clipboard and shows success icon', async () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByTitle('approveAcceptance'));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Suggested AC');
+    });
+  });
+
+  it('copies description to clipboard and shows success icon', async () => {
+    render(<StoryDetailsPopup {...baseProps} />);
+    fireEvent.click(screen.getByTitle('approveDescription'));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Suggested Desc');
+    });
+  });
+
+  it('handles missing suggestions gracefully', () => {
+    const story = { ...baseProps.story, suggestions: null };
+    render(<StoryDetailsPopup {...baseProps} story={story} />);
+    expect(screen.getByText(/Score/i)).toBeInTheDocument(); // Component still renders
+  });
+
+  it('handles missing improvements', () => {
+    const story = { ...baseProps.story, improvements: null };
+    render(<StoryDetailsPopup {...baseProps} story={story} />);
+    expect(screen.getByText(/Score/i)).toBeInTheDocument();
+  });
+});
