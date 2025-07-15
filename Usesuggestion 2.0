@@ -272,3 +272,98 @@ it('executes mergedArray logic when artifactType is feature', async () => {
     },
   ]);
 });
+=============55555555===========
+
+it('should map and merge suggestions for feature type', async () => {
+  const previousLlmResponse = [
+    { feature_id: 'feature1', suggestions: [] },
+    { feature_id: 'feature2', suggestions: [] },
+  ];
+
+  const llmPayload = [
+    { feature_id: 'feature1' },
+    { feature_id: 'feature2' },
+  ];
+
+  const mockSuggestionData = [
+    { data: { feature_id: 'feature1', suggestions: ['SUG1'] } },
+    { data: { feature_id: 'feature2', suggestions: ['SUG2'] } },
+  ];
+
+  let capturedUpdaterFn;
+
+  const setLlmResponse = jest.fn((fn) => {
+    capturedUpdaterFn = fn;
+  });
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    run: jest.fn(),
+    data: {
+      status: 200,
+      body: mockSuggestionData,
+    },
+  });
+
+  renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  // Wait for useEffect to run
+  await act(() => Promise.resolve());
+
+  // 🔥 Manually invoke the updater function with previousLlmResponse
+  const mergedResult = capturedUpdaterFn(previousLlmResponse);
+
+  expect(mergedResult).toEqual([
+    {
+      feature_id: 'feature1',
+      suggestions: { feature_id: 'feature1', suggestions: ['SUG1'] },
+    },
+    {
+      feature_id: 'feature2',
+      suggestions: { feature_id: 'feature2', suggestions: ['SUG2'] },
+    },
+  ]);
+});
+
+it('should handle error response and set suggestions to error', async () => {
+  const previousLlmResponse = [
+    { feature_id: 'feature1', suggestions: [] },
+    { feature_id: 'feature2', suggestions: [] },
+  ];
+
+  let capturedUpdaterFn;
+
+  const setLlmResponse = jest.fn((fn) => {
+    capturedUpdaterFn = fn;
+  });
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    run: jest.fn(),
+    data: {
+      status: 500, // 👈 trigger error block
+      body: {},
+    },
+  });
+
+  const llmPayload = [
+    { feature_id: 'feature1' },
+    { feature_id: 'feature2' },
+  ];
+
+  renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  await act(() => Promise.resolve());
+
+  // Trigger captured updater manually
+  const result = capturedUpdaterFn(previousLlmResponse);
+
+  expect(result).toEqual([
+    { feature_id: 'feature1', suggestions: 'error' },
+    { feature_id: 'feature2', suggestions: 'error' },
+  ]);
+});
