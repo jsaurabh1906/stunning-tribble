@@ -215,3 +215,60 @@ it('merges suggestions into llmResponse for feature type', async () => {
 
   expect(setLlmResponse).toHaveBeenCalled();
 });
+
+========4444================
+it('executes mergedArray logic when artifactType is feature', async () => {
+  const initialLlmResponse = [
+    { feature_id: 'feature1', suggestions: [] },
+    { feature_id: 'feature2', suggestions: [] },
+  ];
+
+  const mockSuggestionData = [
+    { data: { feature_id: 'feature1', suggestions: ['s1'] } },
+    { data: { feature_id: 'feature2', suggestions: ['s2'] } },
+  ];
+
+  const setLlmResponse = jest.fn();
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    run: jest.fn(),
+    data: {
+      status: 200,
+      body: mockSuggestionData,
+    },
+  });
+
+  const llmPayload = [
+    { feature_id: 'feature1' },
+    { feature_id: 'feature2' },
+  ];
+
+  // 👇 Manually call the update function with real initialLlmResponse
+  let capturedUpdater;
+  setLlmResponse.mockImplementation((updater) => {
+    capturedUpdater = updater;
+    updater(initialLlmResponse); // force call with valid array
+  });
+
+  renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  await act(() => Promise.resolve());
+
+  // 🔥 Now assert mergedArray logic was hit
+  expect(capturedUpdater).toBeDefined();
+  const merged = capturedUpdater(initialLlmResponse);
+
+  expect(merged).toEqual([
+    {
+      feature_id: 'feature1',
+      suggestions: { feature_id: 'feature1', suggestions: ['s1'] },
+    },
+    {
+      feature_id: 'feature2',
+      suggestions: { feature_id: 'feature2', suggestions: ['s2'] },
+    },
+  ]);
+});
