@@ -1,0 +1,65 @@
+/* ------------------------------------------------------------------ */
+/*            CASE: getRallyFeatureDetailsApi                         */
+/* ------------------------------------------------------------------ */
+case 'getRallyFeatureDetailsApi': {
+  const details = qeData?.body?.Feature_Detail;
+
+  if (qeData?.status === 200 && Array.isArray(details)) {
+    /* --- 1 ▶︎ run mapping + validation *once* --------------------- */
+    const { data: rows, errors } = mapAndValidate(
+      details,
+      (item) => ({
+        // keep everything you need for ALL outputs ↓
+        feature_id:  item.formattedId,
+        feature_name: item.featureName,
+        feature_description: item.description,
+        feature_acceptance_criteria: item.acceptanceCriteria,
+        notes:       item?.notes,
+        container:   item?.containerName,
+        objectId:    item.objectId,
+        reference:   item.reference,
+      }),
+      ['description', 'acceptanceCriteria']     // ← fields to check
+    );
+
+    /* --- 2 ▶︎ slice that single result into the 3 required arrays -- */
+    const formattedPortfolioData = rows.map((r) => ({
+      feature_id:  r.feature_id,
+      feature_name: r.feature_name,
+      feature_description: r.feature_description,
+      feature_acceptance_criteria: r.feature_acceptance_criteria,
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: r.notes,
+      container_name: r.container,
+    }));
+
+    const featureReference = rows.map((r) => ({
+      feature_featureId: r.feature_id,
+      feature_objectId:  r.objectId,
+      feature_reference: r.reference,
+      container_name:    r.container,
+    }));
+
+    const initialLlmResponse = rows.map((r) => ({
+      feature_id:  r.feature_id,
+      feature_name: r.feature_name,
+      feature_description: r.feature_description,
+      feature_acceptance_criteria: r.feature_acceptance_criteria,
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: r.notes,
+    }));
+
+    /* --- 3 ▶︎ persist state + accumulate validation errors -------- */
+    setFormatErrors((prev) => [...prev, ...errors]);
+    setLmPayload(formattedPortfolioData);
+    setReferenceObjectID(featureReference);
+    setLmResponse(initialLlmResponse);
+
+  } else {
+    /* reset when call fails / returns nothing */
+    setLmPayload([]);
+    setReferenceObjectID([]);
+    setLmResponse([]);
+  }
+  break;
+}
