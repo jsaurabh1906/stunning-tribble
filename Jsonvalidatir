@@ -63,3 +63,106 @@ case 'getRallyFeatureDetailsApi': {
   }
   break;
 }
+
+
+=======================new code=============
+// src/utils/featureDetailValidator.js
+
+export const validateFeatureDetailItems = (items = []) => {
+  const valid = [];
+  const errors = [];
+
+  items.forEach((item, index) => {
+    const id = item.formattedId || `row_${index}`;
+    const issues = [];
+
+    // Try parsing description
+    try {
+      JSON.parse(item.description);
+    } catch {
+      issues.push({ field: 'description', message: 'Invalid JSON format in description' });
+    }
+
+    // Try parsing acceptanceCriteria
+    try {
+      JSON.parse(item.acceptanceCriteria);
+    } catch {
+      issues.push({ field: 'acceptanceCriteria', message: 'Invalid JSON format in acceptance criteria' });
+    }
+
+    if (issues.length > 0) {
+      errors.push({ id, issues });
+    } else {
+      valid.push(item); // only push valid records
+    }
+  });
+
+  return { valid, errors };
+};
+
+
+import { validateFeatureDetailItems } from '../utils/featureDetailValidator';
+
+case 'getRallyFeatureDetailsApi': {
+  const details = qeData?.body?.Feature_Detail;
+
+  if (qeData?.status === 200 && Array.isArray(details)) {
+    const { valid, errors } = validateFeatureDetailItems(details);
+
+    // Now use only valid data for further mapping
+    const formattedPortfolioData = valid.map((item) => ({
+      feature_id: item.formattedId,
+      feature_name: item.featureName,
+      feature_description: JSON.parse(item.description),
+      feature_acceptance_criteria: JSON.parse(item.acceptanceCriteria),
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: item.notes,
+      container_name: item.containerName,
+    }));
+
+    const featureReference = valid.map((item) => ({
+      feature_featureId: item.formattedId,
+      feature_objectId: item.objectId,
+      feature_reference: item.reference,
+      container_name: item.containerName,
+    }));
+
+    const initialLlmResponse = valid.map((item) => ({
+      feature_id: item.formattedId,
+      feature_name: item.featureName,
+      feature_description: JSON.parse(item.description),
+      feature_acceptance_criteria: JSON.parse(item.acceptanceCriteria),
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: item.notes,
+    }));
+
+    setFormatErrors((prev) => [...prev, ...errors]);
+    setLmPayload(formattedPortfolioData);
+    setReferenceObjectID(featureReference);
+    setLmResponse(initialLlmResponse);
+  } else {
+    setLmPayload([]);
+    setReferenceObjectID([]);
+    setLmResponse([]);
+  }
+
+  break;
+}
+
+
+(kkkkkkkkkkkkkkkkkkkkkkkkk
+
+{formatErrors.length > 0 && (
+  <div style={{ color: 'red', marginBottom: 12 }}>
+    {formatErrors.map(err => (
+      <div key={err.id}>
+        <strong>{err.id}</strong>
+        <ul>
+          {err.issues.map(issue => (
+            <li key={issue.field}>{issue.message}</li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </div>
+)}
