@@ -1,0 +1,90 @@
+// src/utils/featureDetailValidator.js
+
+export const isValidJsonStructure = (data) => {
+  try {
+    JSON.stringify(data); // if it throws, it's broken
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
+
+
+
+import { isValidJsonStructure } from '../utils/featureDetailValidator';
+
+case 'getRallyFeatureDetailsApi': {
+  const details = qeData?.body?.Feature_Detail;
+
+  // 🔸 Check if Feature_Detail is fully valid JSON structure
+  if (!isValidJsonStructure(details)) {
+    setFormatErrors((prev) => [
+      ...prev,
+      {
+        id: 'Feature_Detail',
+        issues: [
+          { field: 'Feature_Detail', message: 'Invalid JSON structure in Feature_Detail response.' }
+        ],
+      },
+    ]);
+
+    setLmPayload([]);
+    setReferenceObjectID([]);
+    setLmResponse([]);
+    break;
+  }
+
+  // 🔸 Continue only if Feature_Detail is good
+  if (qeData?.status === 200 && Array.isArray(details)) {
+    const formattedPortfolioData = details.map((item) => ({
+      feature_id: item.formattedId,
+      feature_name: item.featureName,
+      feature_description: item.description,
+      feature_acceptance_criteria: item.acceptanceCriteria,
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: item.notes,
+      container_name: item.containerName,
+    }));
+
+    const featureReference = details.map((item) => ({
+      feature_featureId: item.formattedId,
+      feature_objectId: item.objectId,
+      feature_reference: item.reference,
+      container_name: item.containerName,
+    }));
+
+    const initialLlmResponse = details.map((item) => ({
+      feature_id: item.formattedId,
+      feature_name: item.featureName,
+      feature_description: item.description,
+      feature_acceptance_criteria: item.acceptanceCriteria,
+      suggestions: { Suggested_User_story: defaultSuggestion },
+      notes: item.notes,
+    }));
+
+    setLmPayload(formattedPortfolioData);
+    setReferenceObjectID(featureReference);
+    setLmResponse(initialLlmResponse);
+  } else {
+    setLmPayload([]);
+    setReferenceObjectID([]);
+    setLmResponse([]);
+  }
+
+  break;
+}
+
+
+{formatErrors.length > 0 && (
+  <div style={{ color: 'red' }}>
+    {formatErrors.map(err => (
+      <div key={err.id}>
+        {err.issues.map(issue => (
+          <div key={issue.field}>
+            <strong>{issue.field}</strong>: {issue.message}
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+)}
