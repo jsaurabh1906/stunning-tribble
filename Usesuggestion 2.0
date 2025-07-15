@@ -1,0 +1,119 @@
+import { renderHook, act } from '@testing-library/react-hooks';
+import { useSuggestionHelper } from './useSuggestionApi';
+import { useSelector } from 'react-redux';
+import { useFetchye } from 'fetchye';
+
+jest.mock('fetchye');
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(),
+}));
+
+describe('useSuggestionHelper', () => {
+  const qeAssistUrl = 'http://mock-api';
+  const llmPayload = [
+    { feature_id: 'F1', user_story_id: 'U1' },
+    { feature_id: 'F2', user_story_id: 'U2' },
+  ];
+  const mockSetLlmResponse = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useSelector.mockImplementation(() => qeAssistUrl);
+  });
+
+  test('sets loading state on getSuggestion call', async () => {
+    const mockRun = jest.fn();
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      run: mockRun,
+      data: null,
+    });
+
+    const { result } = renderHook(() =>
+      useSuggestionHelper('feature', llmPayload, mockSetLlmResponse)
+    );
+
+    await act(async () => {
+      await result.current.getSuggestion();
+    });
+
+    expect(mockSetLlmResponse).toHaveBeenCalledWith(expect.any(Function));
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  test('sets suggestions on successful API response (feature)', async () => {
+    const mockRun = jest.fn();
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      run: mockRun,
+      data: {
+        status: 200,
+        body: [
+          { data: { feature_id: 'F1', suggestions: ['suggestion-1'] } },
+          { data: { feature_id: 'F2', suggestions: ['suggestion-2'] } },
+        ],
+      },
+    });
+
+    const { result, rerender } = renderHook(() =>
+      useSuggestionHelper('feature', llmPayload, mockSetLlmResponse)
+    );
+
+    await act(() => {
+      // Simulate re-render after data is updated
+      rerender();
+    });
+
+    // Expect setLlmResponse to be called with a merging function
+    expect(mockSetLlmResponse).toHaveBeenCalled();
+  });
+
+  test('sets suggestions on successful API response (story)', async () => {
+    const mockRun = jest.fn();
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      run: mockRun,
+      data: {
+        status: 200,
+        body: {
+          data: [
+            { user_story_id: 'U1', suggestions: ['suggestion-A'] },
+            { user_story_id: 'U2', suggestions: ['suggestion-B'] },
+          ],
+        },
+      },
+    });
+
+    const { result, rerender } = renderHook(() =>
+      useSuggestionHelper('story', llmPayload, mockSetLlmResponse)
+    );
+
+    await act(() => {
+      rerender();
+    });
+
+    expect(mockSetLlmResponse).toHaveBeenCalled();
+  });
+
+  test('sets error state on API failure', async () => {
+    useFetchye.mockReturnValue({
+      isLoading: false,
+      run: jest.fn(),
+      data: {
+        status: 500,
+        body: {},
+      },
+    });
+
+    const { result, rerender } = renderHook(() =>
+      useSuggestionHelper('feature', llmPayload, mockSetLlmResponse)
+    );
+
+    await act(() => {
+      rerender();
+    });
+
+    expect(mockSetLlmResponse).toHaveBeenCalledWith(expect.any(Function));
+    // Call argument will contain a function that sets suggestions: 'error'
+  });
+});
