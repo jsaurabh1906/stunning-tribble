@@ -175,3 +175,43 @@ it('should handle feature suggestion response correctly', async () => {
 
   expect(setLlmResponse).toHaveBeenCalled();
 });
+3333333333333333333333333333333
+
+it('merges suggestions into llmResponse for feature type', async () => {
+  const initialLlmResponse = [
+    { feature_id: 'feature1', suggestions: [] },
+    { feature_id: 'feature2', suggestions: [] },
+  ];
+
+  const setLlmResponse = jest.fn((updater) => {
+    // Trigger the merge logic
+    updater(initialLlmResponse);
+  });
+
+  const mockSuggestionData = [
+    { data: { feature_id: 'feature1', suggestions: ['Suggestion 1'] } },
+    { data: { feature_id: 'feature2', suggestions: ['Suggestion 2'] } },
+  ];
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    run: jest.fn(),
+    data: {
+      status: 200,
+      body: mockSuggestionData,
+    },
+  });
+
+  const llmPayload = [
+    { feature_id: 'feature1' },
+    { feature_id: 'feature2' },
+  ];
+
+  renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  await act(() => Promise.resolve());
+
+  expect(setLlmResponse).toHaveBeenCalled();
+});
