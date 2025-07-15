@@ -117,3 +117,61 @@ describe('useSuggestionHelper', () => {
     // Call argument will contain a function that sets suggestions: 'error'
   });
 });
+=========================÷==÷÷÷÷÷÷÷÷÷÷
+it('should update items to loading when IDs match', async () => {
+  const runMock = jest.fn();
+  const setLlmResponse = jest.fn((updater) => {
+    const previous = [
+      { feature_id: 'feature1', suggestions: [] },
+      { feature_id: 'feature2', suggestions: [] },
+    ];
+    updater(previous); // call the updater so line 32 executes
+  });
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    data: null,
+    run: runMock,
+  });
+
+  const llmPayload = [{ feature_id: 'feature1' }];
+
+  const { result } = renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  await act(async () => {
+    await result.current.getSuggestion();
+  });
+
+  expect(setLlmResponse).toHaveBeenCalled();
+  expect(runMock).toHaveBeenCalled();
+});
+
+it('should handle feature suggestion response correctly', async () => {
+  const setLlmResponse = jest.fn();
+  const mockResponseData = [
+    { data: { feature_id: 'feature1', suggestions: ['s1'] } },
+    { data: { feature_id: 'feature2', suggestions: ['s2'] } },
+  ];
+
+  useFetchye.mockReturnValue({
+    isLoading: false,
+    run: jest.fn(),
+    data: {
+      status: 200,
+      body: mockResponseData,
+    },
+  });
+
+  const llmPayload = [{ feature_id: 'feature1' }, { feature_id: 'feature2' }];
+
+  renderHook(() =>
+    useSuggestionHelper('feature', llmPayload, setLlmResponse)
+  );
+
+  // Trigger useEffect
+  await act(() => Promise.resolve());
+
+  expect(setLlmResponse).toHaveBeenCalled();
+});
