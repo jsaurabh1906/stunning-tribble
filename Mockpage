@@ -1,0 +1,245 @@
+import React from 'react';
+import styled from 'styled-components';
+
+// Styled Components
+const Container = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background-color: #f5f5f5;
+  min-height: 100vh;
+`;
+
+const Header = styled.h1`
+  color: #333;
+  text-align: center;
+  margin-bottom: 30px;
+  font-size: 2.5rem;
+  font-weight: 600;
+`;
+
+const Section = styled.div`
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e0e0e0;
+`;
+
+const SectionTitle = styled.h2`
+  color: #2c3e50;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 8px;
+`;
+
+const DetailRow = styled.div`
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const Label = styled.span`
+  font-weight: 600;
+  color: #34495e;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const Value = styled.div`
+  color: #2c3e50;
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #3498db;
+`;
+
+const QAItem = styled.div`
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #e74c3c;
+`;
+
+const Question = styled.div`
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  font-size: 1rem;
+`;
+
+const Answer = styled.div`
+  color: #34495e;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  padding-left: 16px;
+  border-left: 2px solid #bdc3c7;
+  margin-left: 8px;
+`;
+
+const QuestionSetItem = styled.div`
+  margin-bottom: 16px;
+  padding: 16px;
+  background-color: #f1f2f6;
+  border-radius: 8px;
+  border-left: 4px solid #27ae60;
+`;
+
+const QuestionNumber = styled.span`
+  font-weight: 600;
+  color: #27ae60;
+  font-size: 0.9rem;
+  margin-right: 8px;
+`;
+
+const QuestionText = styled.div`
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+`;
+
+const AnswerText = styled.div`
+  color: #34495e;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  padding-left: 16px;
+  border-left: 2px solid #95a5a6;
+  margin-left: 8px;
+`;
+
+const FeatureDetailsPage = () => {
+  // Dummy feature details based on the image
+  const featureDetails = {
+    featureId: "F614965",
+    featureName: "SPACE - APAC NPE Rejections Rules One.force signings - 2024 SIP",
+    organization: "undefined",
+    product: "undefined",
+    enhancedScore: "",
+    betaId: "undefined",
+    currentScore: "7.01",
+    docIds: [],
+    enhancedAcceptanceCriteria: "1. Automatic Rejection of Non-Compliant Expansions:\n – NPE and EPE wins must be automatically rejected if declared after the 13-month alignment with the 2024 Strategy focus on acquiring \"New Clients\" signings. The feature aims to enforce compliance by systematically identifying and rejecting non-compliant expansion wins declared by Sales& Corporate Payments team.",
+    featureAcceptanceCriteria: "Automatically reject Expansion wins declared by Sales& Corporate Payments team -Expansions are not allowed after the customer's initial 13-month alignment with the New Client strategy",
+    featureContainerName: "E_GCS One Commercial Data & Incentives (GOCI)_JIRA",
+    featureDescription: "In 2024, \\Sales Focus on New' requires sales function colleagues to focus on New Client signings only. Expansions declarations are not permitted",
+    featureObjectId: "732383908181",
+    featureReference: "https://rally1.rallydev.com/sim/webservice/v2.0/portfolioitem/feature/732383908181",
+    featureType: ""
+  };
+
+  const botQA = {
+    question: "What is the exact definition of '[REDACTED] Status_ be calculated or updated in different scenarios?'",
+    answer: "The exact definition and calculation scenarios for the redacted status are not provided in the available documentation. Please refer to the technical specifications for detailed information."
+  };
+
+  const questionSet = [
+    {
+      questionNumber: 1,
+      question: "What is the exact definition of '[REDACTED] Status_ be calculated or updated in different scenarios?'",
+      answer: "The system should handle status calculations based on predefined business rules and scenarios outlined in the technical requirements."
+    },
+    {
+      questionNumber: 2,
+      question: "Can you clarify the technical requirements for integration overrides into SPACE and ONE.force systems?",
+      answer: "Integration overrides require proper authentication, validation, and error handling mechanisms to ensure data integrity across systems."
+    },
+    {
+      questionNumber: 3,
+      question: "How should the system handle scenarios where there_id this logic be configurable for future use?",
+      answer: "The system should implement configurable business rules that can be modified without code changes, using a rule engine approach."
+    },
+    {
+      questionNumber: 4,
+      question: "What is the rationale for excluding Australia and <? Are there any plans to revisit this exclusion?",
+      answer: "The exclusion is based on regional compliance requirements and market-specific regulations. Future inclusion depends on regulatory alignment."
+    },
+    {
+      questionNumber: 5,
+      question: "How should the system handle cases where a 'New Client' Should there be a configurable grace period?",
+      answer: "The system should implement a configurable grace period with appropriate notifications and escalation procedures for edge cases."
+    }
+  ];
+
+  return (
+    <Container>
+      <Header>Feature Details</Header>
+      
+      {/* Section 1: Feature Basic Information */}
+      <Section>
+        <SectionTitle>Feature Information</SectionTitle>
+        
+        <DetailRow>
+          <Label>Feature ID</Label>
+          <Value>{featureDetails.featureId}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Feature Name</Label>
+          <Value>{featureDetails.featureName}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Description</Label>
+          <Value>{featureDetails.featureDescription}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Acceptance Criteria</Label>
+          <Value>{featureDetails.featureAcceptanceCriteria}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Enhanced Acceptance Criteria</Label>
+          <Value>{featureDetails.enhancedAcceptanceCriteria}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Current Score</Label>
+          <Value>{featureDetails.currentScore}</Value>
+        </DetailRow>
+        
+        <DetailRow>
+          <Label>Container Name</Label>
+          <Value>{featureDetails.featureContainerName}</Value>
+        </DetailRow>
+      </Section>
+
+      {/* Section 2: Bot Q&A */}
+      <Section>
+        <SectionTitle>Bot Q&A</SectionTitle>
+        
+        <QAItem>
+          <Question>Q: {botQA.question}</Question>
+          <Answer>A: {botQA.answer}</Answer>
+        </QAItem>
+      </Section>
+
+      {/* Section 3: Question Set */}
+      <Section>
+        <SectionTitle>Question Set</SectionTitle>
+        
+        {questionSet.map((item, index) => (
+          <QuestionSetItem key={index}>
+            <QuestionText>
+              <QuestionNumber>Q{item.questionNumber}:</QuestionNumber>
+              {item.question}
+            </QuestionText>
+            <AnswerText>A: {item.answer}</AnswerText>
+          </QuestionSetItem>
+        ))}
+      </Section>
+    </Container>
+  );
+};
+
+export default FeatureDetailsPage;
