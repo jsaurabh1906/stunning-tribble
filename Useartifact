@@ -135,3 +135,133 @@ describe('useArtifactQeDataApi', () => {
     expect(loadingCheck).toBe(false);
   });
 });
+
+
+=================
+import { renderHook, act } from '@testing-library/react-hooks';
+import useArtifactQeDataApi from '../useArtifactQeDataApi';
+import * as fetchye from 'fetchye';
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+const mockDispatchers = {
+  setLmPayload: jest.fn(),
+  setReferenceObjectID: jest.fn(),
+  setLmResponse: jest.fn(),
+  setEpicList: jest.fn(),
+  setOrganizations: jest.fn(),
+  setProductData: jest.fn(),
+  setStoryData: jest.fn(),
+  setPlatforms: jest.fn(),
+};
+
+const makeHook = (apiName, mockBodyKey, mockValue) => {
+  fetchye.useFetchye.mockReturnValue({
+    data: {
+      status: 200,
+      body: {
+        [mockBodyKey]: mockValue,
+      },
+    },
+    run: jest.fn(),
+  });
+
+  return renderHook(() =>
+    useArtifactQeDataApi({
+      ...mockDispatchers,
+      payload: { apiName },
+    })
+  );
+};
+
+describe('useArtifactQeDataApi - First 7 Switch Cases', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('handles getOrgNamesApi', async () => {
+    const data = ['Org1', 'Org2'];
+    const { result, rerender } = makeHook('getOrgNamesApi', 'Org_Name_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setOrganizations).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getPlatformNameApi', async () => {
+    const data = ['Platform1'];
+    const { result, rerender } = makeHook('getPlatformNameApi', 'Platform_Name_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setPlatforms).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getOrgProductApi', async () => {
+    const data = ['Product1', 'Product2'];
+    const { result, rerender } = makeHook('getOrgProductApi', 'Product_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setProductData).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getRallyUserStoryByFeatureApi', async () => {
+    const data = [{ id: 1, name: 'Story1' }];
+    const { result, rerender } = makeHook('getRallyUserStoryByFeatureApi', 'User_Story_Details', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setStoryData).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getEpicFeatureApi', async () => {
+    const data = ['Epic1', 'Epic2'];
+    const { result, rerender } = makeHook('getEpicFeatureApi', 'Epic_Feature_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setEpicList).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getOrgProductFeatureApi', async () => {
+    const data = ['Feature1', 'Feature2'];
+    const { result, rerender } = makeHook('getOrgProductFeatureApi', 'Product_Feature_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setEpicList).toHaveBeenCalledWith(data);
+  });
+
+  it('handles getEpicApi when epics are found', async () => {
+    const data = ['Epic1'];
+    const { result, rerender } = makeHook('getEpicApi', 'Epic_List', data);
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+    rerender();
+
+    expect(mockDispatchers.setEpicList).toHaveBeenCalledWith(data);
+  });
+});
