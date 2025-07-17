@@ -1,0 +1,222 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import React from 'react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react';
+import { Formik } from 'formik';
+import '@testing-library/jest-dom/extend-expect';
+import ArtifactFilterSection, {
+  useArtifactFilterSectionEffects,
+} from '../ArtifactFilterSection'; // Adjust path if needed
+import { renderHook } from '@testing-library/react-hooks';
+
+// -------------------------------------
+// MOCKS
+// -------------------------------------
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn((fn) => fn({ config: { oneApiUrl: 'https://fake.api' } })),
+}));
+
+jest.mock('../../hooks/useAuthData', () => ({
+  __esModule: true,
+  default: () => ({
+    userEmail: 'test@domain.com',
+  }),
+}));
+
+jest.mock('fetchye', () => ({
+  __esModule: true,
+  useFetchye: () => ({
+    isLoading: false,
+    run: jest.fn(),
+  }),
+}));
+
+const mockGetArtifactQEData = jest.fn();
+jest.mock('../../hooks/qeassist/useArtifactQeDataApi', () => ({
+  __esModule: true,
+  default: () => ({
+    isArtifactQEApiLoading: jest.fn(() => false),
+    getArtifactQEData: mockGetArtifactQEData,
+  }),
+}));
+
+// -------------------------------------
+// TEST SETUP
+// -------------------------------------
+
+const flushPromises = () => new Promise(setImmediate);
+
+const renderWithFormik = (props = {}) => {
+  return render(
+    <Formik
+      initialValues={{
+        organization: '',
+        product: '',
+        pi: [{ value: 'All', label: 'All' }],
+        epic: '',
+        locateBy: 'Product',
+      }}
+      onSubmit={() => {}}
+    >
+      {(formik) => (
+        <ArtifactFilterSection
+          onFormikRef={() => {}}
+          clearArtifactOptions={jest.fn()}
+          filterValueListener={jest.fn()}
+          {...props}
+        />
+      )}
+    </Formik>
+  );
+};
+
+// -------------------------------------
+// HOOK TEST: useArtifactFilterSectionEffects
+// -------------------------------------
+
+describe('useArtifactFilterSectionEffects', () => {
+  it('sets payload for product path', () => {
+    const setPayload = jest.fn();
+    const filterValues = {
+      product: { value: 'prod1' },
+      epic: { value: '' },
+      pi: [{ value: 'PI-1' }],
+      organization: { value: 'Org-1' },
+      locateBy: 'Product',
+    };
+
+    renderHook(() =>
+      useArtifactFilterSectionEffects({
+        filterValues,
+        setPayload,
+      })
+    );
+
+    expect(setPayload).toHaveBeenCalledWith({
+      apiName: 'getOrgProductFeatureApi',
+      orgName: ['Org-1'],
+      selectedPI: ['PI-1'],
+      product: 'prod1',
+    });
+  });
+
+  it('sets payload for epic path', () => {
+    const setPayload = jest.fn();
+    const filterValues = {
+      product: { value: '' },
+      epic: { value: 'epic123' },
+      pi: [{ value: 'PI-2' }],
+      organization: { value: 'Org-2' },
+      locateBy: 'Epic',
+    };
+
+    renderHook(() =>
+      useArtifactFilterSectionEffects({
+        filterValues,
+        setPayload,
+      })
+    );
+
+    expect(setPayload).toHaveBeenCalledWith({
+      apiName: 'getEpicFeatureApi',
+      orgName: 'GMST',
+      epicId: 'epic123',
+      selectedPI: ['PI-2'],
+    });
+  });
+});
+
+// -------------------------------------
+// COMPONENT TEST: ArtifactFilterSection
+// -------------------------------------
+
+describe('<ArtifactFilterSection />', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders radio buttons and organization dropdown by default', () => {
+    renderWithFormik();
+
+    expect(screen.getByText('Filter By')).toBeInTheDocument();
+    expect(screen.getByLabelText('Organization')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Product' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Epic' })).not.toBeChecked();
+  });
+
+  it('toggles form when switching from Product to Epic', async () => {
+    renderWithFormik();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Epic' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Epic')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText('Product')).not.toBeInTheDocument();
+  });
+
+  it('calls getArtifactQEData on epic change', async () => {
+    renderWithFormik();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Epic' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Epic')).toBeInTheDocument();
+    });
+
+    const epicDropdown = screen.getByLabelText('Epic');
+    fireEvent.change(epicDropdown, { target: { value: 'EPIC-1' } });
+
+    await flushPromises();
+
+    expect(mockGetArtifactQEData).toHaveBeenCalled();
+  });
+
+  it('calls setPayload on organization change', async () => {
+    renderWithFormik();
+
+    const orgSelect = screen.getByLabelText('Organization');
+    fireEvent.change(orgSelect, { target: { value: 'ORG-123' } });
+
+    await flushPromises();
+
+    expect(orgSelect.value).toBe('ORG-123');
+  });
+
+  it('clears product and epic list using clear methods', async () => {
+    const { container } = renderWithFormik();
+
+    const productInput = screen.getByLabelText('Product');
+    expect(productInput).toBeInTheDocument();
+
+    fireEvent.change(productInput, { target: { value: '' } });
+
+    await flushPromises();
+
+    expect(productInput.value).toBe('');
+  });
+
+  it('renders all dropdowns including PI when applicable', async () => {
+    renderWithFormik();
+
+    expect(screen.getByLabelText('Organization')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Organization'), {
+      target: { value: 'ORG-A' },
+    });
+
+    await flushPromises();
+
+    expect(screen.getByLabelText('Product')).toBeInTheDocument();
+    expect(screen.getByLabelText('PI')).toBeInTheDocument();
+  });
+});
