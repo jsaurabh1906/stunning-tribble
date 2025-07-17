@@ -1,0 +1,229 @@
+1.........
+
+
+/**
+ * Global mocks used by several tests
+ */
+import React from 'react';
+import { render } from '@testing-library/react';
+
+export const flushPromises = () => new Promise(setImmediate);
+
+// --- ♦ react-redux -----------------------------------------------------------
+export const mockUseSelector = jest.fn();
+jest.mock('react-redux', () => ({
+  useSelector: (sel) => mockUseSelector(sel),
+}));
+
+// --- ♦ useAuthData -----------------------------------------------------------
+export const mockUser = { userEmail: 'me@example.com' };
+jest.mock('../../hooks/useAuthData', () => ({
+  __esModule: true,
+  default: () => mockUser,
+}));
+
+// --- ♦ fetchye ---------------------------------------------------------------
+/** we only need the hook variant */
+export const mockUseFetchye = jest.fn();
+jest.mock('fetchye', () => ({
+  __esModule: true,
+  default: () => ({
+    data: undefined,
+    isLoading: false,
+    run: mockUseFetchye,
+  }),
+}));
+
+// --- ♦ custom API hook -------------------------------------------------------
+export const mockArtifactQEDispatch = jest.fn();
+jest.mock('../../hooks/qeassist/useArtifactQeDataApi', () => ({
+  __esModule: true,
+  default: () => ({
+    isArtifactQEApiLoading: jest.fn(() => false),
+    getArtifactQEData: mockArtifactQEDispatch,
+  }),
+}));
+
+
+
+2........
+
+import { renderHook } from '@testing-library/react';
+import { useArtifactFilterSectionEffects } from '../ArtifactFilterSection';
+
+describe('useArtifactFilterSectionEffects', () => {
+  it('sets payload when product changes', () => {
+    const setPayload = jest.fn();
+    const { rerender } = renderHook(
+      ({ filterValues }) =>
+        useArtifactFilterSectionEffects({ filterValues, setPayload }),
+      {
+        initialProps: {
+          filterValues: {
+            product: { value: 'my-prod' },
+            pi: [{ value: 'PI-1' }],
+            organization: { value: 'ORG-1' },
+            epic: { value: '' },
+            locateBy: 'Product',
+          },
+        },
+      },
+    );
+
+    expect(setPayload).toHaveBeenCalledWith({
+      apiName: 'getOrgProductFeatureApi',
+      orgName: ['ORG-1'],
+      selectedPI: ['PI-1'],
+      product: 'my-prod',
+    });
+
+    // 🔥 verify second branch (Epic path)
+    setPayload.mockClear();
+    rerender({
+      filterValues: {
+        product: { value: '' },
+        epic: { value: 'SUPER-EPIC' },
+        pi: [{ value: 'PI-1' }],
+        organization: { value: 'ORG-1' },
+        locateBy: 'Epic',
+      },
+    });
+    expect(setPayload).toHaveBeenCalledTimes(1);
+    expect(setPayload.mock.calls[0][0]).toMatchObject({
+      apiName: 'getEpicFeatureApi',
+      epicId: 'SUPER-EPIC',
+    });
+  });
+});
+
+
+3......
+/**
+ * @jest-environment jsdom
+ */
+import React from 'react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { Formik } from 'formik';
+import ArtifactFilterSection from '../ArtifactFilterSection';
+import {
+  flushPromises,
+  mockArtifactQEDispatch,
+  mockUseFetchye,
+  mockUseSelector,
+} from './__mocks__';
+
+// helper — the component expects formik ref from parent
+const TestBed = (props) => (
+  <Formik initialValues={{}} onSubmit={jest.fn()}>
+    {(formik) => <ArtifactFilterSection onFormikRef={() => {}} {...props} />}
+  </Formik>
+);
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockUseSelector.mockReturnValue({ oneApiUrl: 'https://one-api' });
+});
+
+describe('<ArtifactFilterSection /> UI & behaviour', () => {
+  test('renders organisation selector & locate-by radio with defaults', () => {
+    render(<TestBed clearArtifactOptions={jest.fn()} filterValueListener={jest.fn()} />);
+    expect(screen.getByLabelText(/Organization/i)).toBeInTheDocument();
+    const productRadio = screen.getByRole('radio', { name: /Product/i });
+    expect(productRadio).toBeChecked();
+  });
+
+  test('changing locate-by to Epic toggles Epic dropdown', async () => {
+    render(<TestBed clearArtifactOptions={jest.fn()} filterValueListener={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Epic/i }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Epic/i)).toBeInTheDocument(),
+    );
+
+    // Product selector must be gone
+    expect(screen.queryByLabelText(/Product/i)).not.toBeInTheDocument();
+  });
+
+  test('selecting organisation fetches PI list + populates product select', async () => {
+    // Mock PI response from fetchye
+    const fakePiPayload = {
+      data: { body: { PI_List: ['PI-A', 'PI-B'] } },
+      isLoading: false,
+      run: jest.fn(),
+    };
+    mockUseFetchye.mockReturnValue(fakePiPayload);
+
+    render(
+      <TestBed
+        clearArtifactOptions={jest.fn()}
+        filterValueListener={jest.fn()}
+      />,
+    );
+
+    const orgSelect = screen.getByLabelText(/Organization/i);
+    fireEvent.change(orgSelect, { target: { value: 'ORG-1' } });
+
+    // wait for async effect that calls getPiData() ↦ our mocked fetchye hook
+    await flushPromises();
+
+    expect(fakePiPayload.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: expect.stringContaining('/qeData'),
+      }),
+    );
+    // Formik field should have been cleared by helper
+    expect(orgSelect.value).toBe('ORG-1');
+  });
+
+  test('PI select triggers onSubmit-payload via custom API hook', async () => {
+    const clearArtifactOptions = jest.fn();
+    render(
+      <TestBed
+        clearArtifactOptions={clearArtifactOptions}
+        filterValueListener={jest.fn()}
+      />,
+    );
+
+    // Move straight to PI select branch
+    fireEvent.change(screen.getByLabelText(/Organization/i), {
+      target: { value: 'ORG-1' },
+    });
+    fireEvent.change(screen.getByLabelText(/Product/i), {
+      target: { value: 'PROD-1' },
+    });
+    fireEvent.click(
+      screen.getByRole('radio', { name: /Epic/i }),
+    );
+
+    // choose Epic -> should invoke getArtifactQEData via hook
+    fireEvent.change(screen.getByLabelText(/Epic/i), {
+      target: { value: 'EPIC-99' },
+    });
+
+    await flushPromises();
+    expect(mockArtifactQEDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  test('clears lists when helper clear functions called', async () => {
+    const { container } = render(
+      <TestBed
+        clearArtifactOptions={jest.fn()}
+        filterValueListener={jest.fn()}
+      />,
+    );
+
+    // In real component the clear button lives in the filter panel, here we call the methods directly
+    const instance = container.querySelector('#qea-filter-container')._reactRootContainer._internalRoot.current.child.stateNode;
+    instance.clearProductList();
+    instance.clearEpicList();
+
+    await flushPromises();
+    // selectors should now be reset to ''
+    expect(screen.getByLabelText(/Product/i).value).toBe('');
+  });
+});
