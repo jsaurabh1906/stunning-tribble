@@ -265,3 +265,34 @@ describe('useArtifactQeDataApi - First 7 Switch Cases', () => {
     expect(mockDispatchers.setEpicList).toHaveBeenCalledWith(data);
   });
 });
+
+
+
+mmmmmmmmmmmmmmmmmmmmmmm
+
+
+it('should log a warning for unknown apiName in default switch case', async () => {
+  // 👇 Mock console.warn
+  const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+  const payload = { apiName: 'unknownApi' }; // api name that will hit default
+
+  // 👇 Render the hook
+  const { result } = renderHook(() =>
+    useArtifactQeDataApi(payload, mockDispatchers)
+  );
+
+  // 👇 Trigger the logic that calls the switch (e.g., getArtifactQEData)
+  await act(async () => {
+    result.current.getArtifactQEData();
+  });
+
+  // ✅ Assert the warning
+  expect(consoleWarnSpy).toHaveBeenCalledWith(
+    'Unhandled apiName in useArtifactQeDataApi:',
+    'unknownApi'
+  );
+
+  consoleWarnSpy.mockRestore();
+});
+
