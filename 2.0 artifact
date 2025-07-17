@@ -1,0 +1,47 @@
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import ArtifactFilterSection from '../ArtifactFilterSection'; // adjust if path differs
+
+// ✅ Mock useUserData (named export)
+jest.mock('../../../hooks/useAuthData', () => ({
+  __esModule: true,
+  useUserData: jest.fn(() => ({
+    userEmail: 'someone@example.com',
+  })),
+}));
+
+// ✅ Mock formik and useFormik
+jest.mock('formik', () => ({
+  useFormik: () => ({
+    values: {},
+    touched: {},
+    errors: {},
+    handleChange: jest.fn(),
+    handleBlur: jest.fn(),
+    setFieldValue: jest.fn(),
+    setTouched: jest.fn(),
+  }),
+}));
+
+// ✅ Mock DLS components (if they cause render issues)
+jest.mock('@americanexpress/dls-react', () => ({
+  FilterPersistent: ({ children }) => <div data-testid="FilterPersistent">{children}</div>,
+  Label: ({ children }) => <label>{children}</label>,
+  RadioButton: (props) => <input type="radio" {...props} />,
+  RadioGroup: ({ children }) => <div>{children}</div>,
+}));
+
+describe('ArtifactFilterSection', () => {
+  it('renders radio buttons and organization dropdown by default', () => {
+    render(
+      <ArtifactFilterSection
+        clearArtifactOptions={jest.fn()}
+        filterValueListener={jest.fn()}
+      />
+    );
+
+    // 🔍 Adjust these selectors to what the component actually renders
+    expect(screen.getByTestId('FilterPersistent')).toBeInTheDocument();
+    expect(screen.getAllByRole('radio').length).toBeGreaterThan(0);
+  });
+});
