@@ -1,0 +1,137 @@
+import { renderHook, act } from '@testing-library/react-hooks';
+import useArtifactQeDataApi from '../useArtifactQeDataApi';
+import * as fetchye from 'fetchye';
+
+jest.mock('fetchye', () => ({
+  useFetchye: jest.fn(),
+}));
+
+const mockDispatchers = {
+  setLmPayload: jest.fn(),
+  setReferenceObjectID: jest.fn(),
+  setLmResponse: jest.fn(),
+  setEpicList: jest.fn(),
+  setOrganizations: jest.fn(),
+  setProductData: jest.fn(),
+  setStoryData: jest.fn(),
+  setPlatforms: jest.fn(),
+};
+
+const defaultPayload = {
+  apiName: 'getRallyUserStoryDetailApi',
+};
+
+const sampleResponse = {
+  status: 200,
+  body: {
+    User_Story_Detail: [
+      {
+        formattedId: 'US123',
+        featureName: 'Feature A',
+        description: 'Desc',
+        acceptanceCriteria: 'Criteria',
+        objectId: 'obj123',
+        reference: 'ref123',
+        notes: 'Some notes',
+      },
+    ],
+  },
+};
+
+describe('useArtifactQeDataApi', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should set data correctly for getRallyUserStoryDetailApi', async () => {
+    const mockRun = jest.fn();
+    fetchye.useFetchye.mockReturnValue({
+      data: sampleResponse,
+      run: mockRun,
+    });
+
+    const { result } = renderHook(() =>
+      useArtifactQeDataApi({
+        ...mockDispatchers,
+        payload: defaultPayload,
+      })
+    );
+
+    // wait for useEffect to run
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+
+    expect(mockRun).toHaveBeenCalled();
+
+    expect(mockDispatchers.setLmPayload).toHaveBeenCalledWith([
+      expect.objectContaining({
+        user_story_id: 'US123',
+        user_story_name: 'Feature A',
+        suggestions: expect.any(Object),
+      }),
+    ]);
+    expect(mockDispatchers.setReferenceObjectID).toHaveBeenCalled();
+    expect(mockDispatchers.setLmResponse).toHaveBeenCalled();
+  });
+
+  it('should not call state setters when data is missing', async () => {
+    fetchye.useFetchye.mockReturnValue({
+      data: { status: 500 }, // No valid response
+      run: jest.fn(),
+    });
+
+    const { result } = renderHook(() =>
+      useArtifactQeDataApi({
+        ...mockDispatchers,
+        payload: defaultPayload,
+      })
+    );
+
+    await act(async () => {
+      result.current.getArtifactQEData();
+    });
+
+    expect(mockDispatchers.setLmPayload).toHaveBeenCalledWith([]);
+    expect(mockDispatchers.setReferenceObjectID).toHaveBeenCalledWith([]);
+    expect(mockDispatchers.setLmResponse).toHaveBeenCalledWith([]);
+  });
+
+  it('should handle isArtifactQEApiLoading correctly with call history', () => {
+    fetchye.useFetchye.mockReturnValue({
+      data: null,
+      run: jest.fn(),
+    });
+
+    const { result } = renderHook(() =>
+      useArtifactQeDataApi({
+        ...mockDispatchers,
+        payload: defaultPayload,
+      })
+    );
+
+    act(() => {
+      result.current.getArtifactQEData(); // simulate initial run
+    });
+
+    const loadingCheck = result.current.isArtifactQEApiLoading('getRallyUserStoryDetailApi', true);
+    expect(loadingCheck).toBe(true);
+  });
+
+  it('should return false for isArtifactQEApiLoading if api not loading', () => {
+    fetchye.useFetchye.mockReturnValue({
+      data: null,
+      run: jest.fn(),
+    });
+
+    const { result } = renderHook(() =>
+      useArtifactQeDataApi({
+        ...mockDispatchers,
+        payload: { apiName: 'getOtherApi' },
+      })
+    );
+
+    const loadingCheck = result.current.isArtifactQEApiLoading('getRallyUserStoryDetailApi');
+    expect(loadingCheck).toBe(false);
+  });
+});
