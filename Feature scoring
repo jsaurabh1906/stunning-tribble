@@ -1,0 +1,93 @@
+import React from 'react';
+import { render, fireEvent, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import FeatureScoring from './FeatureScoring';
+
+// Mock the custom hooks and components
+jest.mock('./hooks/useAuthData', () => ({
+  useUserData: () => ({ user: { id: 1, name: 'Test User' } })
+}));
+
+jest.mock('./ProductsFormCheck', () => ({
+  ProductsFormCheck: () => <div data-testid="products-form-check">Products Form Check</div>
+}));
+
+jest.mock('@americanexpress/one-insight-toolkit', () => ({
+  AxpCard: ({ children, ...props }) => <div data-testid="axp-card" {...props}>{children}</div>,
+  PageContainer: ({ children, ...props }) => <div data-testid="page-container" {...props}>{children}</div>,
+  isQEAssistAdmin: jest.fn(() => true)
+}));
+
+jest.mock('./containers/DownloadWithFilter', () => ({
+  DownloadWithDateRange: ({ show, setShow, rightActionOnClick, ...props }) => (
+    <div data-testid="download-with-date-range" {...props}>
+      <button 
+        data-testid="right-action-button" 
+        onClick={rightActionOnClick}
+      >
+        Right Action
+      </button>
+      {show && <div data-testid="download-content">Download Content</div>}
+    </div>
+  )
+}));
+
+describe('FeatureScoring Component', () => {
+  test('should handle rightActionOnClick correctly and update show state', () => {
+    render(<FeatureScoring />);
+    
+    // Initially, show should be false, so download content should not be visible
+    expect(screen.queryByTestId('download-content')).not.toBeInTheDocument();
+    
+    // Find and click the right action button
+    const rightActionButton = screen.getByTestId('right-action-button');
+    fireEvent.click(rightActionButton);
+    
+    // After clicking, show should be true, so download content should be visible
+    expect(screen.getByTestId('download-content')).toBeInTheDocument();
+  });
+
+  test('should pass correct props to DownloadWithDateRange component', () => {
+    render(<FeatureScoring />);
+    
+    const downloadComponent = screen.getByTestId('download-with-date-range');
+    
+    // Check if the component receives the correct props
+    expect(downloadComponent).toHaveClass('float-right');
+    expect(downloadComponent).toHaveAttribute('show');
+  });
+
+  test('should render PageContainer with correct props', () => {
+    render(<FeatureScoring />);
+    
+    const pageContainer = screen.getByTestId('page-container');
+    
+    expect(pageContainer).toHaveAttribute('isFluid', 'true');
+    expect(pageContainer).toHaveAttribute('hasPadding', 'false');
+    expect(pageContainer).toHaveAttribute('title', 'Quality Scoring & Recommendations');
+    expect(pageContainer).toHaveAttribute('rightActionType', 'primary');
+    expect(pageContainer).toHaveAttribute('rightActionLabel', 'Audit Log Report');
+  });
+});
+
+// Additional test specifically for the rightActionOnClick function behavior
+describe('rightActionOnClick function (Line 25)', () => {
+  test('should call setShow with true when rightActionOnClick is triggered', () => {
+    const mockSetShow = jest.fn();
+    
+    // Mock useState to return our mock function
+    const useStateSpy = jest.spyOn(React, 'useState');
+    useStateSpy.mockReturnValue([false, mockSetShow]);
+    
+    render(<FeatureScoring />);
+    
+    const rightActionButton = screen.getByTestId('right-action-button');
+    fireEvent.click(rightActionButton);
+    
+    // The current implementation calls setShow() without arguments
+    // This test documents the current behavior - it should be called with true
+    expect(mockSetShow).toHaveBeenCalledWith(true);
+    
+    useStateSpy.mockRestore();
+  });
+});
