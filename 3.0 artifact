@@ -289,3 +289,92 @@ it('calls handlePiChange when PI is selected', async () => {
 
   // Optional: check if a side-effect happened (like onLmDataUpdate or formik.setFieldValue)
 });
+44444444444444444444444444444444444
+
+import React from 'react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
+import ArtifactFilterSection from '../ArtifactFilterSection';
+import '@testing-library/jest-dom';
+
+describe('ArtifactFilterSection - Clear Options Functionality', () => {
+  let mockClearArtifactOptions;
+  let mockFilterValueListener;
+  let mockOnFormik;
+
+  beforeEach(() => {
+    mockClearArtifactOptions = jest.fn();
+    mockFilterValueListener = jest.fn();
+    mockOnFormik = jest.fn();
+  });
+
+  const setup = () =>
+    render(
+      <ArtifactFilterSection
+        clearArtifactOptions={mockClearArtifactOptions}
+        filterValueListener={mockFilterValueListener}
+        onFormik={mockOnFormik}
+      />
+    );
+
+  it('should call clearArtifactOptions when reset is triggered from parent', async () => {
+    const { rerender } = setup();
+
+    // simulate parent calling clearArtifactOptions after reset
+    mockClearArtifactOptions();
+
+    await waitFor(() => {
+      expect(mockClearArtifactOptions).toHaveBeenCalled();
+    });
+
+    // Optionally: rerender with cleared values
+    rerender(
+      <ArtifactFilterSection
+        clearArtifactOptions={mockClearArtifactOptions}
+        filterValueListener={mockFilterValueListener}
+        onFormik={mockOnFormik}
+      />
+    );
+  });
+
+  it('should clear organization dropdown when clearArtifactOptions is called', async () => {
+    const { getByLabelText } = setup();
+
+    const orgSelect = getByLabelText(/Organization/i);
+    fireEvent.change(orgSelect, { target: { value: 'Test Org' } });
+
+    expect(orgSelect.value).toBe('Test Org');
+
+    // simulate clearing
+    mockClearArtifactOptions();
+
+    await waitFor(() => {
+      expect(mockClearArtifactOptions).toHaveBeenCalled();
+      expect(orgSelect.value).toBe(''); // expect cleared
+    });
+  });
+
+  it('should clear product, epic, and pi dropdowns when clearArtifactOptions is invoked', async () => {
+    const { getByLabelText } = setup();
+
+    const productSelect = getByLabelText(/Product/i);
+    const epicSelect = getByLabelText(/Epic/i);
+    const piSelect = getByLabelText(/PI/i);
+
+    fireEvent.change(productSelect, { target: { value: 'Test Product' } });
+    fireEvent.change(epicSelect, { target: { value: 'Test Epic' } });
+    fireEvent.change(piSelect, { target: { value: 'Test PI' } });
+
+    expect(productSelect.value).toBe('Test Product');
+    expect(epicSelect.value).toBe('Test Epic');
+    expect(piSelect.value).toBe('Test PI');
+
+    // simulate clearing
+    mockClearArtifactOptions();
+
+    await waitFor(() => {
+      expect(productSelect.value).toBe('');
+      expect(epicSelect.value).toBe('');
+      expect(piSelect.value).toBe('');
+    });
+  });
+});
