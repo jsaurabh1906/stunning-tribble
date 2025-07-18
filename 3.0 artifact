@@ -378,3 +378,71 @@ describe('ArtifactFilterSection - Clear Options Functionality', () => {
     });
   });
 });
+
+
+import React from 'react';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react';
+import ArtifactFilterSection from '../ArtifactFilterSection';
+
+// Mock props
+const mockFilterValueListener = jest.fn();
+const mockOnFormik = jest.fn();
+
+function WrapperComponent() {
+  const [resetToggle, setResetToggle] = React.useState(false);
+
+  const handleReset = () => {
+    setResetToggle((prev) => !prev); // toggle to simulate clear
+  };
+
+  return (
+    <>
+      <button onClick={handleReset}>Reset</button>
+      <ArtifactFilterSection
+        clearArtifactOptions={() => {
+          // Simulate the parent's clear logic
+        }}
+        filterValueListener={mockFilterValueListener}
+        onFormik={mockOnFormik}
+      />
+    </>
+  );
+}
+
+// Helper to select react-select option
+const selectOption = async (labelText, optionText) => {
+  const label = screen.getByText(labelText);
+  const input = label.nextSibling?.querySelector('input'); // for react-select input
+
+  if (!input) throw new Error('Could not find input for select');
+
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+  const option = await screen.findByText(optionText);
+  fireEvent.click(option);
+};
+
+test('clears select fields after reset is triggered', async () => {
+  render(<WrapperComponent />);
+
+  // Select values
+  await selectOption('Product', 'Product A');
+  await selectOption('Epic', 'Epic X');
+  await selectOption('PI', 'PI 1');
+
+  // Confirm selection exists
+  expect(screen.queryByText('Product A')).not.toBeNull();
+  expect(screen.queryByText('Epic X')).not.toBeNull();
+  expect(screen.queryByText('PI 1')).not.toBeNull();
+
+  // Click Reset
+  fireEvent.click(screen.getByText('Reset'));
+
+  // Wait and assert values are cleared
+  await waitFor(() => {
+    expect(screen.queryByText('Product A')).toBeNull();
+    expect(screen.queryByText('Epic X')).toBeNull();
+    expect(screen.queryByText('PI 1')).toBeNull();
+  });
+});
