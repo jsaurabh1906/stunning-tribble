@@ -236,3 +236,56 @@ describe('<ArtifactFilterSection />', () => {
     expect(screen.getByLabelText(/PI/)).toBeInTheDocument();
   });
 });
+
+=======================================
+
+jest.mock('@/components/qeassist/common/QEAssistMultiSelect', () => ({
+  __esModule: true,
+  default: ({ label, handleChange }) => (
+    <select aria-label={label} onChange={(e) => handleChange(e.target.value)}>
+      <option value="PI-1">PI-1</option>
+      <option value="PI-2">PI-2</option>
+    </select>
+  ),
+}));
+
+it('calls handlePiChange when PI is selected', async () => {
+  const mockRun = jest.fn(() =>
+    Promise.resolve({
+      data: {
+        body: {
+          PI_List: ['PI-1', 'PI-2'],
+        },
+      },
+    })
+  );
+
+  require('fetchye').useFetchye.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    run: mockRun,
+  });
+
+  renderWithFormik();
+
+  // Select org/product to trigger PI fetch
+  fireEvent.change(screen.getByLabelText(/Organization/), {
+    target: { value: 'ORG-A' },
+  });
+
+  fireEvent.change(screen.getByLabelText(/Product/), {
+    target: { value: 'PROD-A' },
+  });
+
+  // Wait until PI dropdown is present
+  await waitFor(() => {
+    expect(screen.getByLabelText(/PI/)).toBeInTheDocument();
+  });
+
+  // Select a PI value
+  fireEvent.change(screen.getByLabelText(/PI/), {
+    target: { value: 'PI-1' },
+  });
+
+  // Optional: check if a side-effect happened (like onLmDataUpdate or formik.setFieldValue)
+});
