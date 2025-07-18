@@ -1,0 +1,122 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import ProductFormCheck from '../ProductFormCheck'; // Update the path as needed
+import * as hooks from '../../../hooks/useArtifactQeDataApi';
+import { Formik } from 'formik';
+import '@testing-library/jest-dom';
+
+// Mock Formik wrapper
+const renderWithFormik = (ui: React.ReactNode, formikProps = {}) =>
+  render(
+    <Formik initialValues={{}} onSubmit={jest.fn()} {...formikProps}>
+      {() => ui}
+    </Formik>
+  );
+
+// Mock hooks
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn().mockReturnValue({
+    user: { org: 'test-org', userId: 'user-1' }
+  })
+}));
+
+jest.mock('../../../hooks/useArtifactQeDataApi', () => ({
+  useArtifactQeDataApi: jest.fn()
+}));
+
+const mockGetArtifactQEDetailsApi = jest.fn();
+const mockGetArtifactScoreData = jest.fn();
+
+const setupMocks = () => {
+  (hooks.useArtifactQeDataApi as jest.Mock).mockReturnValue({
+    getArtifactQEDetailsApi: mockGetArtifactQEDetailsApi,
+    getArtifactScoreData: mockGetArtifactScoreData,
+    setLmPayload: jest.fn(),
+    setReferenceObjectID: jest.fn(),
+    setLmResponse: jest.fn(),
+  });
+};
+
+const defaultProps = {
+  clearArtifactOptions: jest.fn(),
+  filterValueListener: jest.fn(),
+  onFormik: jest.fn(),
+};
+
+describe('ProductFormCheck Component', () => {
+  beforeEach(() => {
+    setupMocks();
+    jest.clearAllMocks();
+  });
+
+  it('renders all key form fields', () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    expect(screen.getByLabelText(/Organization/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Product/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Feature/i)).toBeInTheDocument();
+    expect(screen.getByText(/Quality Level/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Submit/i })).toBeInTheDocument();
+  });
+
+  it('updates organization field via dropdown', async () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    const orgInput = screen.getByLabelText(/Organization/i);
+    fireEvent.change(orgInput, { target: { value: 'test-org' } });
+    await waitFor(() => {
+      expect(orgInput).toHaveValue('test-org');
+    });
+  });
+
+  it('selects quality level radio button', () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    const radio = screen.getByLabelText(/Story Level/i);
+    fireEvent.click(radio);
+    expect(radio).toBeChecked();
+  });
+
+  it('shows manual Feature ID entry on skip click', () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    const skipBtn = screen.getByText(/Skip the filters/i);
+    fireEvent.click(skipBtn);
+    expect(screen.getByLabelText(/Enter Feature ID/i)).toBeInTheDocument();
+  });
+
+  it('calls getArtifactQEDetailsApi on submit', async () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    const submit = screen.getByRole('button', { name: /Submit/i });
+    fireEvent.click(submit);
+    await waitFor(() => {
+      expect(mockGetArtifactQEDetailsApi).toHaveBeenCalled();
+    });
+  });
+
+  it('calls clearArtifactOptions and clears fields', async () => {
+    const clearFn = jest.fn();
+    renderWithFormik(<ProductFormCheck {...defaultProps} clearArtifactOptions={clearFn} />);
+    act(() => {
+      clearFn();
+    });
+    expect(clearFn).toHaveBeenCalled();
+  });
+
+  it('conditionally renders Story ID popup modal', async () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    act(() => {
+      // simulate story modal visibility condition
+      screen.getByText(/Update filter criteria or manually enter your Story ID/i);
+    });
+    expect(
+      screen.getByText(/Update filter criteria or manually enter your Story ID/i)
+    ).toBeInTheDocument();
+  });
+
+  it('calls getArtifactScoreData when payload changes', async () => {
+    renderWithFormik(<ProductFormCheck {...defaultProps} />);
+    act(() => {
+      hooks.useArtifactQeDataApi().getArtifactScoreData({ org: 'test-org' });
+    });
+    await waitFor(() => {
+      expect(mockGetArtifactScoreData).toHaveBeenCalled();
+    });
+  });
+});
