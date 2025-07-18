@@ -1,0 +1,238 @@
+/**
+ * @jest-environment jsdom
+ */
+/* eslint-disable react/prop-types */
+
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Formik } from 'formik';
+import ArtifactFilterSection, {
+  useArtifactFilterSectionEffects,
+} from '../ArtifactFilterSection';
+import { renderHook } from '@testing-library/react-hooks';
+
+// ————————————————
+// M O C K S
+// ————————————————
+
+jest.mock('react-redux', () => ({
+  useSelector: jest.fn(() => ({ oneApiUrl: 'https://fake.api' })),
+}));
+
+jest.mock('../../../hooks/useAuthData', () => ({
+  __esModule: true,
+  useUserData: jest.fn(() => ({
+    userEmail: 'test@domain.com',
+  })),
+}));
+
+jest.mock('fetchye', () => ({
+  __esModule: true,
+  useFetchye: jest.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    run: jest.fn(),
+  })),
+}));
+
+const mockGetArtifactQEData = jest.fn();
+const mockIsArtifactLoading = jest.fn(() => false);
+jest.mock('../../../hooks/qeassist/useArtifactQeDataApi', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    isArtifactQEApiLoading: mockIsArtifactLoading,
+    getArtifactQEData: mockGetArtifactQEData,
+  })),
+}));
+
+jest.mock('@americanexpress/dls-react', () => ({
+  __esModule: true,
+  FilterPersistent: ({ children }) => (
+    <div data-testid="FilterPersistent">{children}</div>
+  ),
+  Label: ({ children, htmlFor }) => (
+    <label htmlFor={htmlFor}>{children}</label>
+  ),
+  RadioGroup: ({ children }) => <div role="radiogroup">{children}</div>,
+  RadioButton: ({ label, ...props }) => (
+    <input type="radio" aria-label={label} {...props} />
+  ),
+}));
+
+// ————————————————
+// H E L P E R S
+// ————————————————
+
+const flushPromises = () => new Promise(setImmediate);
+
+const renderWithFormik = (props = {}) =>
+  render(
+    <Formik
+      initialValues={{
+        organization: '',
+        product: '',
+        pi: [],
+        epic: '',
+        locateBy: 'Product',
+      }}
+      onSubmit={jest.fn()}
+    >
+      {(formik) => (
+        <ArtifactFilterSection
+          onFormikRef={() => {}}
+          clearArtifactOptions={jest.fn()}
+          filterValueListener={jest.fn()}
+          {...props}
+        />
+      )}
+    </Formik>
+  );
+
+// ————————————————
+//  H O O K   T E S T S
+// ————————————————
+
+describe('useArtifactFilterSectionEffects', () => {
+  it('calls setPayload on Product path', () => {
+    const setPayload = jest.fn();
+    const filterValues = {
+      locateBy: 'Product',
+      organization: { value: 'ORG-1' },
+      product: { value: 'PROD-1' },
+      pi: [{ value: 'PI-1' }],
+      epic: { value: '' },
+    };
+
+    renderHook(() =>
+      useArtifactFilterSectionEffects({ filterValues, setPayload })
+    );
+
+    expect(setPayload).toHaveBeenCalledWith({
+      apiName: 'getOrgProductFeatureApi',
+      orgName: ['ORG-1'],
+      selectedPI: ['PI-1'],
+      product: 'PROD-1',
+    });
+  });
+
+  it('calls setPayload on Epic path', () => {
+    const setPayload = jest.fn();
+    const filterValues = {
+      locateBy: 'Epic',
+      organization: { value: 'ORG-2' },
+      product: { value: '' },
+      pi: [{ value: 'PI-2' }],
+      epic: { value: 'EPIC-99' },
+    };
+
+    renderHook(() =>
+      useArtifactFilterSectionEffects({ filterValues, setPayload })
+    );
+
+    expect(setPayload).toHaveBeenCalledWith({
+      apiName: 'getEpicFeatureApi',
+      orgName: 'GMST',
+      selectedPI: ['PI-2'],
+      epicId: 'EPIC-99',
+    });
+  });
+});
+
+// ————————————————
+//  C O M P O N E N T   T E S T S
+// ————————————————
+
+describe('<ArtifactFilterSection />', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    require('react-redux').useSelector.mockReturnValue({
+      oneApiUrl: 'https://fake.api',
+    });
+    require('fetchye').useFetchye.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      run: jest.fn(),
+    });
+  });
+
+  it('renders organization selector and Product radio by default', () => {
+    renderWithFormik();
+
+    expect(screen.getByLabelText(/Organization/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('radio', { name: 'Product' })
+    ).toBeChecked();
+  });
+
+  it('toggles to Epic and shows Epic dropdown', async () => {
+    renderWithFormik();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Epic' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Epic/)).toBeInTheDocument()
+    );
+    expect(screen.queryByLabelText(/Product/)).not.toBeInTheDocument();
+  });
+
+  it('calls fetchye.run on organization change', async () => {
+    const mockRun = jest.fn();
+    require('fetchye').useFetchye.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      run: mockRun,
+    });
+
+    renderWithFormik();
+    fireEvent.change(screen.getByLabelText(/Organization/), {
+      target: { value: 'ORG-1' },
+    });
+    await flushPromises();
+
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: expect.stringContaining('/qeData'),
+      })
+    );
+  });
+
+  it('calls getArtifactQEData on Epic selection', async () => {
+    renderWithFormik();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Epic' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Epic/)).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByLabelText(/Epic/), {
+      target: { value: 'EPIC-1' },
+    });
+    await flushPromises();
+
+    expect(mockGetArtifactQEData).toHaveBeenCalled();
+  });
+
+  it('renders PI dropdown after selecting organization & product', async () => {
+    const fakeFetch = {
+      data: { body: { PI_List: ['PI-A', 'PI-B'] } },
+      isLoading: false,
+      run: jest.fn(),
+    };
+    require('fetchye').useFetchye.mockReturnValue(fakeFetch);
+
+    renderWithFormik();
+
+    fireEvent.change(screen.getByLabelText(/Organization/), {
+      target: { value: 'ORG-A' },
+    });
+    await flushPromises();
+
+    expect(screen.getByLabelText(/Product/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Product/), {
+      target: { value: 'PROD-A' },
+    });
+    await flushPromises();
+
+    expect(screen.getByLabelText(/PI/)).toBeInTheDocument();
+  });
+});
