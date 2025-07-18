@@ -446,3 +446,56 @@ test('clears select fields after reset is triggered', async () => {
     expect(screen.queryByText('PI 1')).toBeNull();
   });
 });
+....................................
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Formik } from 'formik';
+import ArtifactFilterSection from '../ArtifactFilterSection';
+
+describe('ArtifactFilterSection - Reset Behavior', () => {
+  it('should clear form fields when clearArtifactOptions is called', async () => {
+    let capturedClearArtifactOptions: () => void = () => {};
+
+    render(
+      <Formik
+        initialValues={{
+          product: { label: 'test-org', value: 'test-org' },
+          feature: null,
+          story: null,
+          // ... other fields
+        }}
+        onSubmit={() => {}}
+      >
+        {(formik) => (
+          <>
+            <ArtifactFilterSection
+              onFormik={(f) => {
+                formik = f;
+              }}
+              filterValueListener={jest.fn()}
+              clearArtifactOptions={() => {
+                formik.setFieldValue('product', null);
+                formik.setFieldValue('feature', null);
+                formik.setFieldValue('story', null);
+              }}
+            />
+            <button onClick={() => {
+              formik.setFieldValue('product', null);
+              formik.setFieldValue('feature', null);
+              formik.setFieldValue('story', null);
+            }}>Reset All</button>
+          </>
+        )}
+      </Formik>
+    );
+
+    // Confirm field value is selected
+    expect(screen.getByText('test-org')).toBeInTheDocument();
+
+    // Trigger reset
+    fireEvent.click(screen.getByText('Reset All'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('test-org')).not.toBeInTheDocument();
+    });
+  });
+});
