@@ -1,0 +1,89 @@
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import AssessmentCard from '../AssessmentCard';
+import '@testing-library/jest-dom';
+import { act } from 'react-dom/test-utils';
+
+jest.mock('@americanexpress/cornerstone-table', () => ({
+  __esModule: true,
+  default: jest.fn(({ data }) => (
+    <div data-testid="mockDataTable">
+      MockTable - {data.length} rows
+    </div>
+  )),
+}));
+
+// Setup props
+const baseProps = {
+  artifactType: 'feature',
+  llmResponse: [{ feature_id: '1', name: 'Test Feature' }],
+  llmMessage: 'Test message',
+  isArtifactQEApiLoading: jest.fn(),
+  featureColumns: [{ key: 'feature_id', label: 'Feature ID' }],
+  userstoryColumns: [{ key: 'story_id', label: 'Story ID' }],
+};
+
+describe('AssessmentCard Component', () => {
+  it('renders loading state when API is loading (feature)', () => {
+    const props = {
+      ...baseProps,
+      isArtifactQEApiLoading: (api) => api === 'getRallyFeatureDetailsApi',
+    };
+
+    render(<AssessmentCard {...props} />);
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('renders loading state when API is loading (user story)', () => {
+    const props = {
+      ...baseProps,
+      isArtifactQEApiLoading: (api) => api === 'getRallyUserStoryDetailApi',
+    };
+
+    render(<AssessmentCard {...props} />);
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('renders table with featureColumns when artifactType is feature', async () => {
+    const props = {
+      ...baseProps,
+      isArtifactQEApiLoading: () => false,
+    };
+
+    await act(async () => {
+      render(<AssessmentCard {...props} />);
+    });
+
+    expect(screen.getByText('Test message')).toBeInTheDocument();
+    expect(screen.getByTestId('mockDataTable')).toHaveTextContent('MockTable - 1 rows');
+  });
+
+  it('renders table with userstoryColumns when artifactType is not feature', async () => {
+    const props = {
+      ...baseProps,
+      artifactType: 'userstory',
+      isArtifactQEApiLoading: () => false,
+    };
+
+    await act(async () => {
+      render(<AssessmentCard {...props} />);
+    });
+
+    expect(screen.getByTestId('mockDataTable')).toBeInTheDocument();
+    expect(screen.getByText('Test message')).toBeInTheDocument();
+  });
+
+  it('does not render table if llmMessage is falsy', async () => {
+    const props = {
+      ...baseProps,
+      llmMessage: '',
+      isArtifactQEApiLoading: () => false,
+    };
+
+    await act(async () => {
+      render(<AssessmentCard {...props} />);
+    });
+
+    expect(screen.queryByTestId('mockDataTable')).not.toBeInTheDocument();
+  });
+});
